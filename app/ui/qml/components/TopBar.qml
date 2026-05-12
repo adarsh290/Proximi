@@ -6,6 +6,12 @@ import themes 1.0
 Rectangle {
     color: Theme.bgPanel
 
+    // Derived state helpers
+    property bool hasFolder: typeof scanController !== "undefined" && scanController.currentFolder !== ""
+    property bool isScanning: typeof scanController !== "undefined" && scanController.scanState === "scanning"
+    property bool isLoaded: typeof scanController !== "undefined" && scanController.scanState === "loaded"
+    property bool hasScanned: typeof scanController !== "undefined" && scanController.hasScannedCurrentFolder
+
     RowLayout {
         anchors.fill: parent
         anchors.margins: Theme.spaceM
@@ -19,7 +25,7 @@ Rectangle {
             Layout.alignment: Qt.AlignVCenter
         }
 
-        // Separator
+        // Separator (always visible)
         Rectangle {
             Layout.preferredWidth: 1
             Layout.preferredHeight: 24
@@ -28,42 +34,85 @@ Rectangle {
             color: Theme.border
         }
 
-        // Selected folder path (truncated)
+        // Folder path — shown once a folder has been scanned
         Text {
             id: folderPathText
             property string fullPath: typeof scanController !== "undefined" ? scanController.currentFolder : ""
+            visible: hasScanned || isScanning
             text: {
-                if (!fullPath || fullPath === "") return "No folder selected"
-                // Show last 2 segments of path for readability
+                if (!fullPath || fullPath === "") return ""
                 var parts = fullPath.replace(/\\/g, "/").split("/")
                 if (parts.length > 2) {
-                    return ".../" + parts.slice(-2).join("/")
+                    return "📂 .../" + parts.slice(-2).join("/")
                 }
-                return fullPath
+                return "📂 " + fullPath
             }
-            color: fullPath ? Theme.textSecondary : Theme.textDisabled
+            color: Theme.textSecondary
             font.pixelSize: Theme.fontSmall
             elide: Text.ElideMiddle
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
         }
 
-        // Select Folder button
+        // Spacer when folder path is hidden
+        Item {
+            visible: !hasScanned && !isScanning
+            Layout.fillWidth: true
+        }
+
+        // ── Action buttons (only visible after scan is complete or during scan) ──
+
+        // Change Folder button
         Button {
-            text: "Select Folder"
+            id: changeFolderBtn
+            text: "Change Folder"
+            visible: hasScanned && !isScanning
             onClicked: {
                 if (typeof scanController !== "undefined") {
                     scanController.selectFolder()
                 }
             }
             background: Rectangle {
-                color: parent.hovered ? Theme.accentHover : Theme.accent
+                color: changeFolderBtn.hovered ? Theme.bgHover : "transparent"
+                radius: Theme.radiusS
+                border.color: Theme.border
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 150 } }
+            }
+            contentItem: Text {
+                text: changeFolderBtn.text
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSmall
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        // Rescan button
+        Button {
+            id: rescanButton
+            visible: hasScanned || isScanning
+            text: isScanning ? "Scanning... " + scanController.scanProgress + "%" : "Rescan"
+            enabled: !isScanning && (typeof similarityController === "undefined" || similarityController.similarityState !== "processing")
+            onClicked: {
+                if (typeof scanController !== "undefined") {
+                    if (typeof similarityController !== "undefined") {
+                        similarityController.resetState()
+                    }
+                    scanController.startScan()
+                }
+            }
+            background: Rectangle {
+                color: {
+                    if (!rescanButton.enabled) return Theme.accentDisabled
+                    return rescanButton.hovered ? Theme.accentHover : Theme.accentSubtle
+                }
                 radius: Theme.radiusS
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
-                text: parent.text
-                color: Theme.textPrimary
+                text: rescanButton.text
+                color: rescanButton.enabled ? Theme.textPrimary : Theme.textDisabled
                 font.pixelSize: Theme.fontSmall
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
@@ -71,37 +120,30 @@ Rectangle {
             }
         }
 
-        // Scan button
+        // Find Similar button
         Button {
-            id: scanButton
-            text: {
-                if (typeof scanController !== "undefined" && scanController.scanState === "scanning") {
-                    return "Scanning... " + scanController.scanProgress + "%"
-                }
-                return "Scan"
-            }
-            enabled: {
-                if (typeof scanController === "undefined") return false
-                return scanController.currentFolder !== "" && scanController.scanState !== "scanning"
-            }
+            id: similarButton
+            text: "Find Similar"
+            visible: isLoaded
+            enabled: typeof similarityController !== "undefined" && similarityController.similarityState !== "processing"
 
             onClicked: {
-                if (typeof scanController !== "undefined") {
-                    scanController.startScan()
+                if (typeof similarityController !== "undefined") {
+                    similarityController.startSimilarityProcessing()
                 }
             }
 
             background: Rectangle {
                 color: {
-                    if (!scanButton.enabled) return Theme.accentDisabled
-                    return scanButton.hovered ? Theme.accentHover : Theme.accentSubtle
+                    if (!similarButton.enabled) return Theme.accentDisabled
+                    return similarButton.hovered ? "#00E5FF" : "#00C3FF"
                 }
                 radius: Theme.radiusS
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
-                text: scanButton.text
-                color: scanButton.enabled ? Theme.textPrimary : Theme.textDisabled
+                text: similarButton.text
+                color: similarButton.enabled ? "#000000" : Theme.textDisabled
                 font.pixelSize: Theme.fontSmall
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter

@@ -1,8 +1,8 @@
 # Proximi Project Context
 
 ## Current Milestone
-**Milestone 2 — Image Ingestion & Thumbnail Pipeline**
-Focus: Folder selection, recursive image scanning, async thumbnail generation, SQLite metadata persistence, progressive thumbnail grid rendering.
+**Milestone 3 — Similarity Engine & Grouping System**
+Focus: CPU-bound classical CV pipeline (pHash/dHash), SSIM refinement, NetworkX connected-components grouping, similarity background worker, and GroupReview UI.
 
 ## Architecture Overview
 - **UI:** Qt Quick / QML
@@ -13,12 +13,15 @@ Focus: Folder selection, recursive image scanning, async thumbnail generation, S
 - **Async Pattern:** QThreadPool + QRunnable
 - **Pattern:** Layered architecture (UI -> Controllers -> Services -> Database/Repository)
 
-## Active Technologies
 - Python 3
 - PySide6
 - SQLAlchemy
 - QML
 - Pillow
+- imagehash
+- scikit-image
+- networkx
+- scipy & numpy
 
 ## Folder Structure
 - `app/ui/qml/`: QML UI components and themes
@@ -60,6 +63,28 @@ Focus: Folder selection, recursive image scanning, async thumbnail generation, S
 | modified_at | DateTime | file mtime |
 | thumbnail_path | String | nullable |
 | scan_session_id | Integer | FK → scan_sessions |
+| phash | String | nullable, imagehash |
+| dhash | String | nullable, imagehash |
+| hash_computed_at | DateTime | nullable |
+
+### groups
+| Column | Type | Notes |
+|--------|------|-------|
+| id | Integer | PK, autoincrement |
+| group_type | String | 'similar' or 'burst' |
+| similarity_score | Float | |
+| created_at | DateTime | |
+| scan_session_id | Integer | FK → scan_sessions |
+| version | Integer | Default 1 |
+| representative_image_id | Integer | FK → images |
+
+### group_members
+| Column | Type | Notes |
+|--------|------|-------|
+| id | Integer | PK, autoincrement |
+| group_id | Integer | FK → groups |
+| image_id | Integer | FK → images |
+| added_at | DateTime | |
 
 ### scan_sessions
 | Column | Type | Notes |
@@ -85,11 +110,23 @@ Focus: Folder selection, recursive image scanning, async thumbnail generation, S
 - Cached to `data/thumbnails/` as WEBP (optimized format)
 - Cache validation via path + mtime hash
 
-### ScanWorker (QRunnable)
-- Runs ScanService on QThreadPool
-- Emits signals: image_ready, progress, finished, error
-- Separate QObject for signals (QRunnable can't have signals)
-- Supports future cancellation via cancel() / _cancelled flag
+### HashService
+- Computes perceptual hashes (pHash, dHash) using `imagehash`.
+- Processes incrementally (only unhashed images).
+
+### SimilarityService
+- Candidate filtering using pHash Hamming distance (threshold <= 7).
+- Refinement scoring using SSIM via `scikit-image`.
+
+### GroupingService
+- Builds an adjacency graph of candidates using `networkx`.
+- Clusters via connected components and persists groups (min size 2).
+- Assigns group representative node based on cluster centrality.
+
+### ScanWorker & SimilarityWorker (QRunnable)
+- Run async logic on QThreadPool.
+- Emit signals for progress tracking and UI updates.
+- Support cancellation patterns.
 
 ## Controllers
 
@@ -99,6 +136,11 @@ Focus: Folder selection, recursive image scanning, async thumbnail generation, S
 - ImageViewModel transformation layer (path → URI conversion)
 - Properties: currentFolder, scanState, scanProgress, scannedCount, totalImages
 - Signals: imageReady, scanFinished
+
+### SimilarityController
+- Exposes `similarityState`, `currentPhase`, `progress`, `groupCount`, `currentGroupIndex`.
+- UI bridge for launching the similarity pipeline.
+- Exposes formatted group and image view-models to `GroupReviewView`.
 
 ### DebugController
 - Toggle visibility (Ctrl+Shift+D)
@@ -137,21 +179,21 @@ Focus: Folder selection, recursive image scanning, async thumbnail generation, S
 - Recursive image scanning (async via QThreadPool)
 - Thumbnail generation and caching (Pillow, WEBP, SHA256)
 - SQLite metadata persistence (images + scan_sessions tables)
-- Image repository layer
 - Progressive thumbnail grid (GridView with clip)
 - Empty/Loading/Loaded UI states
-- ImageCard with subtle hover effects
-- Startup loading of previously scanned images
-- HEIC format support (pillow-heif, graceful fallback)
 - ImageViewModel layer (filesystem path → file URI conversion)
 - Internal debug panel with runtime metrics
-- Scan/thumbnail/worker/DB/runtime metric instrumentation
+- Migration script structure to update DB schema (ALTER TABLE).
+- Group and Hash database schema expansions.
+- Classical CV Similarity Pipeline (pHash, dHash, SSIM refinement).
+- Graph-based clustering (connected components via NetworkX).
+- UI Integration (SimilarityProcessingView, GroupReviewView).
 
 ## Pending Features
-- Milestone 3: TBD (likely similarity detection, perceptual hashing, grouping)
+- Milestone 4: TBD (Likely image manipulation/deduplication actions, UI cleanup)
 
 ## Known Issues
 - None yet.
 
 ## Next Planned Milestone
-- TBD (Similarity & grouping features)
+- TBD (Actions/Deduplication)

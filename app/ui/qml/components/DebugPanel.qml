@@ -127,6 +127,18 @@ Rectangle {
                 ]
             }
 
+            // ── Similarity Metrics ───────────────────────────────
+            DebugSection {
+                title: "SIMILARITY"
+                metrics: [
+                    { label: "Hashes",      value: String(debugRoot.snapshot.simHashes || 0) },
+                    { label: "Candidates",  value: String(debugRoot.snapshot.simCandidates || 0) },
+                    { label: "Refined",     value: String(debugRoot.snapshot.simRefined || 0) },
+                    { label: "Groups",      value: String(debugRoot.snapshot.simGroups || 0) },
+                    { label: "Duration",    value: (debugRoot.snapshot.simDuration || 0) + "s" }
+                ]
+            }
+
             // ── Worker Metrics ───────────────────────────────────
             DebugSection {
                 title: "WORKERS"

@@ -14,19 +14,26 @@ Item {
     property int scannedCount: 0
     property int totalImages: 0
 
-    // Empty State
+    // Similarity properties
+    property string similarityState: typeof similarityController !== "undefined" ? similarityController.similarityState : "idle"
+    property string similarityPhase: typeof similarityController !== "undefined" ? similarityController.currentPhase : ""
+    property int similarityProgress: typeof similarityController !== "undefined" ? similarityController.progress : 0
+
+    // Empty State — visible when no images are loaded and not in scanning/similarity mode
     EmptyState {
         anchors.fill: parent
-        visible: contentRoot.scanState === "empty" && (!contentRoot.imageModel || contentRoot.imageModel.count === 0)
+        visible: (!contentRoot.imageModel || contentRoot.imageModel.count === 0)
+                 && contentRoot.scanState !== "scanning"
+                 && contentRoot.similarityState === "idle"
     }
 
-    // Image Grid (visible during scanning and after loaded)
+    // Image Grid (visible during scanning and after loaded, hidden during similarity review)
     GridView {
         id: imageGrid
         anchors.fill: parent
         anchors.margins: Theme.gridSpacing
         clip: true
-        visible: contentRoot.imageModel && contentRoot.imageModel.count > 0
+        visible: contentRoot.imageModel && contentRoot.imageModel.count > 0 && contentRoot.similarityState === "idle"
 
         cellWidth: Theme.thumbnailSize + Theme.gridSpacing
         cellHeight: Theme.thumbnailSize + Theme.gridSpacing
@@ -87,5 +94,22 @@ Item {
                 NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
             }
         }
+    }
+
+    // Similarity Processing Overlay
+    SimilarityProcessingView {
+        anchors.fill: parent
+        visible: contentRoot.similarityState === "processing"
+        phase: contentRoot.similarityPhase
+        progressPercent: contentRoot.similarityProgress
+    }
+
+    // Group Review View
+    GroupReviewView {
+        anchors.fill: parent
+        visible: contentRoot.similarityState === "ready"
+        currentIndex: typeof similarityController !== "undefined" ? similarityController.currentGroupIndex : 0
+        totalGroups: typeof similarityController !== "undefined" ? similarityController.groupCount : 0
+        currentGroup: typeof similarityController !== "undefined" ? similarityController.currentGroupData : ({})
     }
 }

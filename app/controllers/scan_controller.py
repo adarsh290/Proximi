@@ -40,6 +40,8 @@ class ScanController(QObject):
     scanProgressChanged = Signal()
     scannedCountChanged = Signal()
     totalImagesChanged = Signal()
+    hasScannedCurrentFolderChanged = Signal()
+    scanStarted = Signal()
     imageReady = Signal(str, str, str)  # original_path, thumbnail_path, file_name
     scanFinished = Signal(int)          # total processed
 
@@ -53,6 +55,7 @@ class ScanController(QObject):
         self._scan_progress = 0        # 0-100
         self._scanned_count = 0
         self._total_images = 0
+        self._has_scanned_current_folder = False
         self._worker = None
 
     # ── Properties (exposed to QML) ───────────────────────────────────
@@ -77,6 +80,10 @@ class ScanController(QObject):
     def totalImages(self) -> int:
         return self._total_images
 
+    @Property(bool, notify=hasScannedCurrentFolderChanged)
+    def hasScannedCurrentFolder(self) -> bool:
+        return self._has_scanned_current_folder
+
     # ── Slots (callable from QML) ─────────────────────────────────────
 
     @Slot()
@@ -88,7 +95,10 @@ class ScanController(QObject):
             "",
         )
         if folder:
-            self._current_folder = folder
+            if self._current_folder != folder:
+                self._current_folder = folder
+                self._has_scanned_current_folder = False
+                self.hasScannedCurrentFolderChanged.emit()
             self.currentFolderChanged.emit()
             logger.info(f"Folder selected: {folder}")
 
@@ -112,6 +122,7 @@ class ScanController(QObject):
         self.scanProgressChanged.emit()
         self.scannedCountChanged.emit()
         self.totalImagesChanged.emit()
+        self.scanStarted.emit()
 
         # Create worker and connect signals
         self._worker = ScanWorker(self._scan_service, self._current_folder)
@@ -165,9 +176,11 @@ class ScanController(QObject):
         """Handle scan completion."""
         self._scan_state = "loaded"
         self._scan_progress = 100
+        self._has_scanned_current_folder = True
         self._worker = None
         if self._debug_service:
             self._debug_service.scan_completed()
+        self.hasScannedCurrentFolderChanged.emit()
         self.scanStateChanged.emit()
         self.scanProgressChanged.emit()
         self.scanFinished.emit(total_processed)

@@ -63,6 +63,22 @@ class WorkerMetrics:
     active_workers: int = 0
     is_cancelled: bool = False
 
+@dataclass
+class SimilarityMetrics:
+    hashes_computed: int = 0
+    candidate_pairs: int = 0
+    refined_comparisons: int = 0
+    groups_created: int = 0
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+
+    @property
+    def duration_secs(self) -> float:
+        if self.start_time is None:
+            return 0.0
+        end = self.end_time or time.time()
+        return round(end - self.start_time, 2)
+
 
 class DebugService:
     """Centralized metrics aggregation for internal debug panel.
@@ -77,6 +93,7 @@ class DebugService:
         self._scan = ScanMetrics()
         self._thumbnail = ThumbnailMetrics()
         self._worker = WorkerMetrics()
+        self._similarity = SimilarityMetrics()
 
     # ── Scan Metrics ──────────────────────────────────────────────────
 
@@ -131,6 +148,34 @@ class DebugService:
         with self._lock:
             self._thumbnail.failures += 1
 
+    # ── Similarity Metrics ────────────────────────────────────────────
+
+    def similarity_started(self) -> None:
+        with self._lock:
+            self._similarity = SimilarityMetrics(start_time=time.time())
+            self._worker.active_workers = 1
+
+    def similarity_hash_computed(self) -> None:
+        with self._lock:
+            self._similarity.hashes_computed += 1
+
+    def similarity_candidate_found(self) -> None:
+        with self._lock:
+            self._similarity.candidate_pairs += 1
+
+    def similarity_refinement_computed(self) -> None:
+        with self._lock:
+            self._similarity.refined_comparisons += 1
+
+    def similarity_group_created(self) -> None:
+        with self._lock:
+            self._similarity.groups_created += 1
+
+    def similarity_completed(self) -> None:
+        with self._lock:
+            self._similarity.end_time = time.time()
+            self._worker.active_workers = 0
+
     # ── Snapshot (thread-safe read) ───────────────────────────────────
 
     def get_snapshot(self) -> dict:
@@ -179,6 +224,12 @@ class DebugService:
                 "thumbCacheHits": self._thumbnail.cache_hits,
                 "thumbCacheMisses": self._thumbnail.cache_misses,
                 "thumbFailures": self._thumbnail.failures,
+                # Similarity
+                "simHashes": self._similarity.hashes_computed,
+                "simCandidates": self._similarity.candidate_pairs,
+                "simRefined": self._similarity.refined_comparisons,
+                "simGroups": self._similarity.groups_created,
+                "simDuration": self._similarity.duration_secs,
                 # Worker
                 "activeWorkers": self._worker.active_workers,
                 "workerCancelled": self._worker.is_cancelled,

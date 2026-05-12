@@ -25,6 +25,10 @@ ApplicationWindow {
     Connections {
         target: typeof scanController !== "undefined" ? scanController : null
 
+        function onScanStarted() {
+            imageListModel.clear()
+        }
+
         function onImageReady(originalPath, thumbnailPath, fileName) {
             imageListModel.append({
                 "originalPath": originalPath,
@@ -38,16 +42,10 @@ ApplicationWindow {
         }
     }
 
-    // ── Load stored images on startup ────────────────────────────────
+    // ── Startup initialization ───────────────────────────────────────
     Component.onCompleted: {
-        if (typeof scanController !== "undefined") {
-            var storedImages = scanController.getStoredImages()
-            if (storedImages && storedImages.length > 0) {
-                for (var i = 0; i < storedImages.length; i++) {
-                    imageListModel.append(storedImages[i])
-                }
-            }
-        }
+        // App launches into a clean empty state on startup
+        // We do not load stored images automatically
     }
 
     // ── Keyboard shortcut: Ctrl+Shift+D → toggle debug panel ────────

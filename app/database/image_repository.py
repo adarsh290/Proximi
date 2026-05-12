@@ -129,3 +129,41 @@ class ImageRepository:
             return session.query(Image).count()
         finally:
             session.close()
+
+    # ── Similarity / Hash Operations ──────────────────────────────────
+
+    def get_images_without_hashes(self) -> list[Image]:
+        """Returns images that do not have perceptual hashes computed yet."""
+        session: Session = db.SessionLocal()
+        try:
+            images = session.query(Image).filter(Image.phash.is_(None)).all()
+            session.expunge_all()
+            return images
+        finally:
+            session.close()
+
+    def get_all_hashed_images(self) -> list[Image]:
+        """Returns all images that have perceptual hashes."""
+        session: Session = db.SessionLocal()
+        try:
+            images = session.query(Image).filter(Image.phash.is_not(None)).all()
+            session.expunge_all()
+            return images
+        finally:
+            session.close()
+
+    def update_hashes(self, image_id: int, phash: str, dhash: str) -> None:
+        """Updates the perceptual hashes for a specific image."""
+        session: Session = db.SessionLocal()
+        try:
+            image = session.query(Image).filter_by(id=image_id).first()
+            if image:
+                image.phash = phash
+                image.dhash = dhash
+                image.hash_computed_at = datetime.now()
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to update hashes for image {image_id}: {e}")
+        finally:
+            session.close()

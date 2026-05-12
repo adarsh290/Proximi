@@ -20,8 +20,14 @@ class Image(Base):
     thumbnail_path = Column(String, nullable=True)
     scan_session_id = Column(Integer, ForeignKey("scan_sessions.id"))
 
-    # Relationship back to scan session
+    # Similarity Hashes
+    phash = Column(String, nullable=True, index=True)
+    dhash = Column(String, nullable=True, index=True)
+    hash_computed_at = Column(DateTime, nullable=True)
+
+    # Relationships
     scan_session = relationship("ScanSession", back_populates="images")
+    group_memberships = relationship("GroupMember", back_populates="image", cascade="all, delete")
 
     def __repr__(self) -> str:
         return f"<Image(id={self.id}, name='{self.file_name}')>"
