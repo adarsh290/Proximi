@@ -52,10 +52,8 @@ class DuplicateService:
             hash_groups[(img.phash, img.dhash)].append(img)
             
         # 4. Identify duplicates to remove
-        files_to_trash = []
-        ids_to_delete = []
+        ids_to_stage = []
         removed_paths = []
-        batch_id = f"exact_dup_{uuid.uuid4().hex[:8]}"
         
         groups_with_dups = [group for group in hash_groups.values() if len(group) > 1]
         total_dup_groups = len(groups_with_dups)
@@ -66,29 +64,20 @@ class DuplicateService:
                 
             # Sort by file_size descending so we keep the largest one
             group.sort(key=lambda x: x.file_size, reverse=True)
-            keeper = group[0]
             duplicates = group[1:]
             
             for dup in duplicates:
-                files_to_trash.append({
-                    "original_path": dup.original_path,
-                    "group_id": None,
-                    "scan_session_id": dup.scan_session_id,
-                    "image_id": dup.id
-                })
-                ids_to_delete.append(dup.id)
+                ids_to_stage.append(dup.id)
                 removed_paths.append(dup.original_path)
                 
             if on_progress:
                 progress_pct = 50 + int((i / max(1, total_dup_groups)) * 50)
                 on_progress(progress_pct, 100)
                 
-        # 5. Move to trash and delete from DB
-        if files_to_trash:
-            moved, _ = self.trash_service.move_to_trash(files_to_trash, batch_id)
-            if ids_to_delete:
-                self.image_repository.delete_images(ids_to_delete)
-            logger.info(f"Removed {moved} exact duplicates.")
+        # 5. Stage for trash instead of moving immediately
+        if ids_to_stage:
+            self.image_repository.stage_images_for_trash(ids_to_stage)
+            logger.info(f"Staged {len(ids_to_stage)} exact duplicates for deletion.")
             
         if on_progress:
             on_progress(100, 100)

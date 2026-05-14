@@ -33,17 +33,35 @@ def run_migrations(db_path_str: str = "data/proximi.db"):
             conn.commit()
             logger.info("DB migration completed successfully (images hashes).")
             
+        # Milestone 6: Check for is_staged_for_trash column
+        if "is_staged_for_trash" not in columns:
+            logger.info("Running DB migration: Adding 'is_staged_for_trash' to 'images' table.")
+            cursor.execute("ALTER TABLE images ADD COLUMN is_staged_for_trash INTEGER DEFAULT 0")
+            conn.commit()
+            logger.info("DB migration completed successfully (staging column).")
+
+        # Display rotation override column
+        if "display_rotation" not in columns:
+            logger.info("Running DB migration: Adding 'display_rotation' to 'images' table.")
+            cursor.execute("ALTER TABLE images ADD COLUMN display_rotation INTEGER DEFAULT 0")
+            conn.commit()
+            logger.info("DB migration completed successfully (display_rotation column).")
+
+        # Check if new tables from Phase 3 (People/Faces) exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='faces'")
+        faces_exists = cursor.fetchone()
+
         # Milestone 4: Check if 'trash_records' exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trash_records'")
-        if not cursor.fetchone():
-            logger.info("Running DB migration: 'trash_records' table missing. Creating via SQLAlchemy.")
+        trash_exists = cursor.fetchone()
+        
+        if not trash_exists or not faces_exists:
+            logger.info("Running DB migration: Creating missing tables via SQLAlchemy.")
             from app.database.connection import db
             from app.database.base import Base
             import app.models # Ensure models are loaded
             Base.metadata.create_all(bind=db.engine)
-            logger.info("DB migration completed successfully (trash_records).")
-
-        
+            logger.info("DB migration completed successfully (missing tables created).")
     except Exception as e:
         logger.error(f"Failed to run migrations: {e}")
     finally:

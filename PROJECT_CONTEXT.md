@@ -345,7 +345,7 @@ data/
 - `DuplicateService` (Hash-based exact duplicate detection, keeper selection by file size)
 - `DuplicateWorker` (Async worker for duplicate removal)
 - `ScanController` integration with `removeExactDuplicates()`
-- TopBar UI integration with "Clean Exact Duplicates" button
+- TopBar UI integration with "Clean Duplicates" button
 
 ---
 

@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps
 
 # Register HEIC/HEIF format support with Pillow
 try:
@@ -79,6 +79,9 @@ class ThumbnailService:
 
         try:
             with PILImage.open(source_path) as img:
+                # Apply EXIF rotation automatically
+                img = ImageOps.exif_transpose(img)
+
                 # Convert to RGB if necessary (handles RGBA, P, etc.)
                 if img.mode not in ("RGB", "L"):
                     img = img.convert("RGB")
@@ -111,6 +114,8 @@ class ThumbnailService:
         """
         try:
             with PILImage.open(source_path) as img:
+                # Apply EXIF rotation to get correct visual dimensions
+                img = ImageOps.exif_transpose(img)
                 return img.size  # (width, height)
         except Exception as e:
             logger.warning(f"Failed to read dimensions for '{source_path}': {e}")

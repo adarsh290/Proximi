@@ -27,6 +27,33 @@ Item {
         }
     }
 
+    // FIX 2: Timer-based retry for first group data population.
+    // When similarity processing finishes, the view may become visible
+    // before group data is fully loaded. This timer retries loading.
+    Timer {
+        id: retryTimer
+        interval: 100
+        repeat: true
+        running: reviewRoot.visible && !reviewRoot.hasData && reviewRoot.totalGroups > 0
+        property int attempts: 0
+
+        onTriggered: {
+            attempts++
+            // Re-read group data from the controller
+            if (typeof similarityController !== "undefined") {
+                reviewRoot.currentGroup = similarityController.currentGroupData
+            }
+            if (reviewRoot.hasData || attempts >= 10) {
+                retryTimer.stop()
+                attempts = 0
+            }
+        }
+
+        onRunningChanged: {
+            if (running) attempts = 0
+        }
+    }
+
     // ── Main Layout ─────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
@@ -63,6 +90,7 @@ Item {
                 thumbnailSource: model.thumbnailPath || ""
                 fileName: model.fileName || ""
                 imageId: model.imageId || -1
+                displayRotation: model.displayRotation || 0
                 
                 onRequestPreview: {
                     if (typeof previewModal !== "undefined") {

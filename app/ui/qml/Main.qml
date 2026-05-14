@@ -16,6 +16,9 @@ ApplicationWindow {
 
     color: Theme.bgApp
 
+    // ── Application State ────────────────────────────────────────────
+    property string currentView: "photos" // "photos" or "people"
+
     // ── Image data model ─────────────────────────────────────────────
     ListModel {
         id: imageListModel
@@ -114,11 +117,17 @@ ApplicationWindow {
 
                 ContentArea {
                     anchors.fill: parent
+                    visible: root.currentView === "photos"
                     scanState: typeof scanController !== "undefined" ? scanController.scanState : "empty"
                     imageModel: imageListModel
                     scanProgress: typeof scanController !== "undefined" ? scanController.scanProgress : 0
                     scannedCount: typeof scanController !== "undefined" ? scanController.scannedCount : 0
                     totalImages: typeof scanController !== "undefined" ? scanController.totalImages : 0
+                }
+
+                PeopleView {
+                    anchors.fill: parent
+                    visible: root.currentView === "people"
                 }
 
                 // Debug panel overlays on right edge of content area

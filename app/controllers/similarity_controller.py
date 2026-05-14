@@ -188,18 +188,25 @@ class SimilarityController(QObject):
 
     @Slot(result=dict)
     def getCurrentGroupData(self) -> dict:
-        """Returns the current group's data including formatted image view-models."""
+        """Returns the current group's data including formatted image view-models.
+        
+        Filters out images that have been staged for trash so they
+        don't appear in group review after the user stages them.
+        """
         if not self._groups_cache or self._current_group_index >= len(self._groups_cache):
             return {}
             
         group = self._groups_cache[self._current_group_index]
         
-        # Format images for QML
+        # Format images for QML, filtering out staged images (BUG 5)
         images_data = []
         for member in group.members:
             img = member.image
             if not img:
                 logger.error(f"GroupMember {member.id} has no associated image loaded!")
+                continue
+            # Skip images that have been staged for deletion
+            if getattr(img, 'is_staged_for_trash', 0) == 1:
                 continue
             vm = ImageViewModel.from_image(img)
             images_data.append(vm)

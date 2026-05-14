@@ -1,0 +1,97 @@
+import os
+import uuid
+import numpy as np
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
+
+from app.utils.logger import logger
+
+
+class FaceService:
+    """Service to handle facial detection and embedding extraction using InsightFace."""
+    
+    def __init__(self, cache_dir: str = "data/faces"):
+        self.cache_dir = Path(cache_dir).resolve()
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._app = None
+        self._is_initialized = False
+        
+    def _init_model(self):
+        """Lazy initialization of the ML models to prevent startup lag and handle missing dependencies."""
+        if self._is_initialized:
+            return self._app is not None
+            
+        self._is_initialized = True
+        try:
+            import insightface
+            from insightface.app import FaceAnalysis
+            
+            # Initialize model. Tries CUDA first, falls back to CPU.
+            self._app = FaceAnalysis(name='antelopev2', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            self._app.prepare(ctx_id=0, det_size=(640, 640))
+            logger.info("InsightFace model initialized successfully.")
+            return True
+        except ImportError:
+            logger.error("ML dependencies (insightface/onnxruntime) are not installed.")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to initialize insightface: {e}")
+            return False
+
+    def detect_and_extract_faces(self, image_path: str) -> List[Dict]:
+        """Detect faces, extract embeddings, crop the face, and save to cache.
+        
+        Returns:
+            A list of dicts: {'bbox': (l, t, r, b), 'embedding': bytes, 'crop_path': str}
+        """
+        if not self._init_model():
+            return []
+            
+        import cv2
+        
+        try:
+            # Read image using OpenCV (BGR format as expected by InsightFace)
+            img = cv2.imread(image_path)
+            if img is None:
+                logger.warning(f"Failed to read image for face detection: {image_path}")
+                return []
+                
+            faces = self._app.get(img)
+            results = []
+            
+            for face in faces:
+                bbox = face.bbox.astype(int)
+                embedding = face.normed_embedding  # 512-d normalized float32 array
+                
+                # Crop face with some padding (20%)
+                l, t, r, b = bbox
+                h, w = img.shape[:2]
+                pad_w = int((r - l) * 0.2)
+                pad_h = int((b - t) * 0.2)
+                
+                # Ensure bounds are within image
+                l_pad = max(0, l - pad_w)
+                t_pad = max(0, t - pad_h)
+                r_pad = min(w, r + pad_w)
+                b_pad = min(h, b + pad_h)
+                
+                crop = img[t_pad:b_pad, l_pad:r_pad]
+                
+                if crop.size == 0:
+                    continue
+                    
+                # Save crop as thumbnail for UI
+                crop_filename = f"{uuid.uuid4().hex}.jpg"
+                crop_path = self.cache_dir / crop_filename
+                cv2.imwrite(str(crop_path), crop)
+                
+                results.append({
+                    'bbox': (int(l), int(t), int(r), int(b)),
+                    'embedding': embedding.tobytes(),
+                    'crop_path': str(crop_path)
+                })
+                
+            return results
+        except Exception as e:
+            logger.error(f"Error extracting faces from {image_path}: {e}")
+            return []

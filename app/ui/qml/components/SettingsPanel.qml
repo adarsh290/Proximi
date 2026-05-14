@@ -35,10 +35,16 @@ Item {
         radius: Theme.radiusM
 
         Flickable {
+            id: settingsFlickable
             anchors.fill: parent
             anchors.margins: Theme.spaceM
             contentHeight: settingsColumn.implicitHeight
             clip: true
+            // FIX 5: Disable interactive flickable so sliders can receive mouse events
+            interactive: !sliderInteracting
+
+            // Track if any slider is being interacted with
+            property bool sliderInteracting: phashSlider.pressed || ssimSlider.pressed || dhashSlider.pressed || histSlider.pressed
 
             ColumnLayout {
                 id: settingsColumn
@@ -147,12 +153,29 @@ Item {
                     Slider {
                         id: phashSlider
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 32
                         from: 2; to: 28; stepSize: 1
                         value: typeof settingsController !== "undefined" ? settingsController.phashThreshold : 12
                         onMoved: {
                             if (typeof settingsController !== "undefined")
                                 settingsController.setPhashThreshold(Math.round(value))
                         }
+
+                        // FIX 5: Handle mouse wheel on slider
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            onWheel: (wheel) => {
+                                if (wheel.angleDelta.y > 0) {
+                                    phashSlider.increase()
+                                } else {
+                                    phashSlider.decrease()
+                                }
+                                if (typeof settingsController !== "undefined")
+                                    settingsController.setPhashThreshold(Math.round(phashSlider.value))
+                            }
+                        }
+
                         background: Rectangle {
                             x: phashSlider.leftPadding
                             y: phashSlider.topPadding + phashSlider.availableHeight / 2 - height / 2
@@ -179,9 +202,9 @@ Item {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "Strict"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Strict (2)"; color: Theme.textMuted; font.pixelSize: 9 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "Loose"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Loose (28)"; color: Theme.textMuted; font.pixelSize: 9 }
                     }
                 }
 
@@ -232,12 +255,28 @@ Item {
                     Slider {
                         id: ssimSlider
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 32
                         from: 0.20; to: 0.95; stepSize: 0.05
                         value: typeof settingsController !== "undefined" ? settingsController.ssimThreshold : 0.55
                         onMoved: {
                             if (typeof settingsController !== "undefined")
                                 settingsController.setSsimThreshold(value)
                         }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            onWheel: (wheel) => {
+                                if (wheel.angleDelta.y > 0) {
+                                    ssimSlider.increase()
+                                } else {
+                                    ssimSlider.decrease()
+                                }
+                                if (typeof settingsController !== "undefined")
+                                    settingsController.setSsimThreshold(ssimSlider.value)
+                            }
+                        }
+
                         background: Rectangle {
                             x: ssimSlider.leftPadding
                             y: ssimSlider.topPadding + ssimSlider.availableHeight / 2 - height / 2
@@ -264,9 +303,9 @@ Item {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "Loose"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Loose (0.20)"; color: Theme.textMuted; font.pixelSize: 9 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "Strict"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Strict (0.95)"; color: Theme.textMuted; font.pixelSize: 9 }
                     }
                 }
 
@@ -317,12 +356,28 @@ Item {
                     Slider {
                         id: dhashSlider
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 32
                         from: 4; to: 30; stepSize: 1
                         value: typeof settingsController !== "undefined" ? settingsController.dhashThreshold : 18
                         onMoved: {
                             if (typeof settingsController !== "undefined")
                                 settingsController.setDhashThreshold(Math.round(value))
                         }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            onWheel: (wheel) => {
+                                if (wheel.angleDelta.y > 0) {
+                                    dhashSlider.increase()
+                                } else {
+                                    dhashSlider.decrease()
+                                }
+                                if (typeof settingsController !== "undefined")
+                                    settingsController.setDhashThreshold(Math.round(dhashSlider.value))
+                            }
+                        }
+
                         background: Rectangle {
                             x: dhashSlider.leftPadding
                             y: dhashSlider.topPadding + dhashSlider.availableHeight / 2 - height / 2
@@ -349,9 +404,9 @@ Item {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "Strict"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Strict (4)"; color: Theme.textMuted; font.pixelSize: 9 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "Loose"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Loose (30)"; color: Theme.textMuted; font.pixelSize: 9 }
                     }
                 }
 
@@ -402,12 +457,28 @@ Item {
                     Slider {
                         id: histSlider
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 32
                         from: 0.10; to: 0.90; stepSize: 0.05
                         value: typeof settingsController !== "undefined" ? settingsController.histogramThreshold : 0.30
                         onMoved: {
                             if (typeof settingsController !== "undefined")
                                 settingsController.setHistogramThreshold(value)
                         }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            onWheel: (wheel) => {
+                                if (wheel.angleDelta.y > 0) {
+                                    histSlider.increase()
+                                } else {
+                                    histSlider.decrease()
+                                }
+                                if (typeof settingsController !== "undefined")
+                                    settingsController.setHistogramThreshold(histSlider.value)
+                            }
+                        }
+
                         background: Rectangle {
                             x: histSlider.leftPadding
                             y: histSlider.topPadding + histSlider.availableHeight / 2 - height / 2
@@ -434,9 +505,9 @@ Item {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "Loose"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Loose (0.10)"; color: Theme.textMuted; font.pixelSize: 9 }
                         Item { Layout.fillWidth: true }
-                        Text { text: "Strict"; color: Theme.textMuted; font.pixelSize: 9 }
+                        Text { text: "Strict (0.90)"; color: Theme.textMuted; font.pixelSize: 9 }
                     }
                 }
 

@@ -30,7 +30,8 @@ class ImageViewModel:
             "width": img.width or 0,
             "height": img.height or 0,
             "fileSize": img.file_size or 0,
-            "modifiedAt": img.modified_at.timestamp() if img.modified_at else 0
+            "modifiedAt": img.modified_at.timestamp() if img.modified_at else 0,
+            "displayRotation": getattr(img, 'display_rotation', 0) or 0
         }
     
     @staticmethod
@@ -122,7 +123,7 @@ class ScanController(QObject):
 
     @Slot()
     def selectFolder(self):
-        """Open native folder picker and update currentFolder."""
+        """Open native folder picker, update currentFolder, and auto-start scan."""
         folder = QFileDialog.getExistingDirectory(
             None,
             "Select Image Folder",
@@ -130,12 +131,15 @@ class ScanController(QObject):
             QFileDialog.Option.DontUseNativeDialog   # Shows files inside folders for better UX
         )
         if folder:
-            if self._current_folder != folder:
-                self._current_folder = folder
+            is_new_folder = self._current_folder != folder
+            self._current_folder = folder
+            if is_new_folder:
                 self._has_scanned_current_folder = False
                 self.hasScannedCurrentFolderChanged.emit()
             self.currentFolderChanged.emit()
             logger.info(f"Folder selected: {folder}")
+            # Auto-start scan for the selected folder
+            self.startScan()
 
     @Slot()
     def startScan(self):

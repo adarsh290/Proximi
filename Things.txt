@@ -1,0 +1,7 @@
+idea1. ig we should add a save button on top bar beside the folder location. This save will only change the original folder else all the changes make should be only in the app not in the folder unless the save is pressed. save will only be like saving a checkpoint like i have selected the photos from group 1 and after saving it all other photos will be deleted.
+idea2. Or we can have app create the copy of the original folder and save all the changes in that temp folder. After being done uses can exporter the final product to a new location 
+FIX1: change the name "Clean exact Duplicates" to "Clean Duplicates".
+Fix2: that old Bug is not fixed. After doing the find similarity the first group preview is not there (like no outline and no photos).
+Fix3: why cant i keep more than 1 photo in a group. fix it
+Fix4: you have a change folder button but it does nothing now. make it work like after pressing change the folder show the folder choosing box and then make it like what happen after choosing the folder from "Browse folder".
+fix5: i sill cant scroll those bars to change the values of threshold. Also add the text of max and min value of all the thresholds.

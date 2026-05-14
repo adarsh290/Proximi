@@ -141,7 +141,60 @@ Rectangle {
             Layout.fillWidth: true
         }
 
+        // ── View Toggle ──────────────────────────────────────────────
+        Button {
+            id: viewToggleBtn
+            text: root.currentView === "photos" ? "👥 Switch to People" : "🖼 Switch to Photos"
+            visible: hasScanned
+            onClicked: {
+                root.currentView = (root.currentView === "photos") ? "people" : "photos"
+            }
+            background: Rectangle {
+                color: viewToggleBtn.hovered ? Theme.bgHover : "transparent"
+                radius: Theme.radiusS
+                border.color: Theme.border
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 150 } }
+            }
+            contentItem: Text {
+                text: viewToggleBtn.text
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSmall
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+        
         // ── Action buttons ───────────────────────────────────────────
+
+        // Scan Faces button
+        Button {
+            id: scanFacesBtn
+            text: "Scan Faces"
+            visible: hasScanned && !isScanning
+            enabled: typeof faceController !== "undefined" && !faceController.isScanning
+            onClicked: {
+                if (typeof faceController !== "undefined") {
+                    faceController.startFaceScan()
+                }
+            }
+            background: Rectangle {
+                color: scanFacesBtn.hovered ? Theme.bgHover : "transparent"
+                radius: Theme.radiusS
+                border.color: Theme.border
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 150 } }
+            }
+            contentItem: Text {
+                text: typeof faceController !== "undefined" && faceController.isScanning 
+                      ? "Scanning Faces..." 
+                      : scanFacesBtn.text
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSmall
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
 
         // Change Folder button
         Button {
@@ -149,6 +202,9 @@ Rectangle {
             text: "Change Folder"
             visible: hasScanned && !isScanning
             onClicked: {
+                if (typeof similarityController !== "undefined") {
+                    similarityController.resetState()
+                }
                 if (typeof scanController !== "undefined") {
                     scanController.selectFolder()
                 }
@@ -201,13 +257,13 @@ Rectangle {
             }
         }
 
-        // Clean Exact Duplicates button
+        // Clean Duplicates button
         Button {
             id: cleanDuplicatesBtn
             property bool isRemoving: typeof scanController !== "undefined" && scanController.isRemovingDuplicates
             property int progress: typeof scanController !== "undefined" ? scanController.duplicateProgress : 0
             
-            text: isRemoving ? "Cleaning... " + progress + "%" : "Clean Exact Duplicates"
+            text: isRemoving ? "Cleaning... " + progress + "%" : "Clean Duplicates"
             visible: isLoaded
             enabled: !isRemoving && (typeof similarityController === "undefined" || similarityController.similarityState !== "processing")
 
@@ -265,6 +321,84 @@ Rectangle {
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        // ── Staged Commit Controls ───────────────────────────────────
+        RowLayout {
+            visible: typeof cleanupController !== "undefined" && cleanupController.stagedCount > 0
+            spacing: Theme.spaceS
+            Layout.leftMargin: Theme.spaceM
+            
+            Rectangle {
+                Layout.preferredWidth: stagedLabel.implicitWidth + 24
+                Layout.preferredHeight: 32
+                radius: 16
+                color: "#F59E0B" // Amber background
+
+                Row {
+                    id: stagedLabel
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Text { text: "⏳"; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Text {
+                        text: (typeof cleanupController !== "undefined" ? cleanupController.stagedCount : 0) + " Staged"
+                        color: "white"
+                        font.bold: true
+                        font.pixelSize: Theme.fontSmall
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+            }
+
+            Button {
+                id: commitBtn
+                text: "Apply Changes"
+                onClicked: cleanupController.commitStagedChanges()
+                background: Rectangle {
+                    color: commitBtn.hovered ? "#059669" : "#10B981" // Green
+                    radius: Theme.radiusS
+                }
+                contentItem: Text {
+                    text: commitBtn.text
+                    color: "white"
+                    font.bold: true
+                    font.pixelSize: Theme.fontSmall
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    leftPadding: 12
+                    rightPadding: 12
+                }
+            }
+
+            Button {
+                id: discardBtn
+                text: "Discard"
+                onClicked: cleanupController.clearStagedChanges()
+                background: Rectangle {
+                    color: discardBtn.hovered ? Theme.bgHover : "transparent"
+                    border.color: Theme.border
+                    border.width: 1
+                    radius: Theme.radiusS
+                }
+                contentItem: Text {
+                    text: discardBtn.text
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSmall
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    leftPadding: 12
+                    rightPadding: 12
+                }
+            }
+
+            // Divider
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 24
+                color: Theme.border
+                Layout.leftMargin: Theme.spaceS
+                Layout.rightMargin: Theme.spaceS
             }
         }
 

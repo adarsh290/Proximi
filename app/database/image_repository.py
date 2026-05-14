@@ -112,10 +112,10 @@ class ImageRepository:
             session.close()
 
     def get_all_images(self) -> list:
-        """Retrieves all image records ordered by creation time."""
+        """Retrieves all image records ordered by creation time (excluding staged)."""
         session: Session = db.SessionLocal()
         try:
-            images = session.query(Image).order_by(Image.created_at.desc()).all()
+            images = session.query(Image).filter(Image.is_staged_for_trash == 0).order_by(Image.created_at.desc()).all()
             # Detach from session so they can be used outside
             session.expunge_all()
             return images
@@ -123,30 +123,36 @@ class ImageRepository:
             session.close()
 
     def get_image_count(self) -> int:
-        """Returns the total number of images in the database."""
+        """Returns the total number of images in the database (excluding staged)."""
         session: Session = db.SessionLocal()
         try:
-            return session.query(Image).count()
+            return session.query(Image).filter(Image.is_staged_for_trash == 0).count()
         finally:
             session.close()
 
     # ── Similarity / Hash Operations ──────────────────────────────────
 
     def get_images_without_hashes(self) -> list[Image]:
-        """Returns images that do not have perceptual hashes computed yet."""
+        """Returns images that do not have perceptual hashes computed yet (excluding staged)."""
         session: Session = db.SessionLocal()
         try:
-            images = session.query(Image).filter(Image.phash.is_(None)).all()
+            images = session.query(Image).filter(
+                Image.phash.is_(None),
+                Image.is_staged_for_trash == 0
+            ).all()
             session.expunge_all()
             return images
         finally:
             session.close()
 
     def get_all_hashed_images(self) -> list[Image]:
-        """Returns all images that have perceptual hashes."""
+        """Returns all images that have perceptual hashes (excluding staged)."""
         session: Session = db.SessionLocal()
         try:
-            images = session.query(Image).filter(Image.phash.is_not(None)).all()
+            images = session.query(Image).filter(
+                Image.phash.is_not(None),
+                Image.is_staged_for_trash == 0
+            ).all()
             session.expunge_all()
             return images
         finally:
@@ -186,5 +192,85 @@ class ImageRepository:
             session.rollback()
             logger.error(f"Failed to delete images: {e}")
             return 0
+        finally:
+            session.close()
+
+    # ── Staging Operations ────────────────────────────────────────────
+
+    def stage_images_for_trash(self, image_ids: list[int]) -> None:
+        """Mark images as staged for deletion."""
+        if not image_ids:
+            return
+            
+        session: Session = db.SessionLocal()
+        try:
+            session.query(Image).filter(Image.id.in_(image_ids)).update({"is_staged_for_trash": 1}, synchronize_session=False)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to stage images: {e}")
+        finally:
+            session.close()
+
+    def unstage_images_for_trash(self, image_ids: list[int] = None) -> None:
+        """Clear the staging flag for images."""
+        session: Session = db.SessionLocal()
+        try:
+            query = session.query(Image)
+            if image_ids is not None:
+                query = query.filter(Image.id.in_(image_ids))
+            else:
+                query = query.filter(Image.is_staged_for_trash == 1)
+                
+            query.update({"is_staged_for_trash": 0}, synchronize_session=False)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to unstage images: {e}")
+        finally:
+            session.close()
+
+    def unstage_all_images(self) -> None:
+        """Clear the staging flag for ALL images."""
+        self.unstage_images_for_trash(None)
+
+    def get_staged_images(self) -> list[Image]:
+        """Fetch all images marked as staged for trash."""
+        session: Session = db.SessionLocal()
+        try:
+            images = session.query(Image).filter(Image.is_staged_for_trash == 1).all()
+            session.expunge_all()
+            return images
+        finally:
+            session.close()
+
+    def get_staged_count(self) -> int:
+        """Returns the total number of staged images."""
+        session: Session = db.SessionLocal()
+        try:
+            return session.query(Image).filter(Image.is_staged_for_trash == 1).count()
+        finally:
+            session.close()
+
+    # ── Display Rotation ──────────────────────────────────────────────
+
+    def set_display_rotation(self, image_id: int, rotation: int) -> None:
+        """Set the display-only rotation for an image (0, 90, 180, 270 degrees CCW).
+        
+        This does NOT modify the original file — it only affects how
+        the image is displayed in the app.
+        """
+        rotation = rotation % 360  # Normalize
+        session: Session = db.SessionLocal()
+        try:
+            session.query(Image).filter(Image.id == image_id).update(
+                {"display_rotation": rotation},
+                synchronize_session=False
+            )
+            session.commit()
+            logger.info(f"Set display rotation for image {image_id} to {rotation}°")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to set display rotation: {e}")
         finally:
             session.close()

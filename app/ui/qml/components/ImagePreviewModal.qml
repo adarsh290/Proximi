@@ -50,6 +50,7 @@ Item {
         anchors.margins: Theme.spaceL
         source: root.imageSource
         fillMode: Image.PreserveAspectFit
+        autoTransform: true
         asynchronous: true
         smooth: true
         mipmap: true

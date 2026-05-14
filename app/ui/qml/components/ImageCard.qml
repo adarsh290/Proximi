@@ -8,6 +8,7 @@ Item {
     property string fileName: ""
     property int imageId: -1
     property string selectionState: "unselected"
+    property int displayRotation: 0  // 0, 90, 180, 270 degrees CCW
 
     Component.onCompleted: {
         if (typeof cleanupController !== "undefined" && cardRoot.imageId !== -1) {
@@ -22,6 +23,11 @@ Item {
                 cardRoot.selectionState = cleanupController.selectionState[String(cardRoot.imageId)] || "unselected"
             }
         }
+        function onDisplayRotationChanged(imgId, newRotation) {
+            if (imgId === cardRoot.imageId) {
+                cardRoot.displayRotation = newRotation
+            }
+        }
     }
 
 
@@ -33,15 +39,25 @@ Item {
         color: Theme.bgCard
         clip: true
 
-        // Thumbnail image (lazy loaded, async)
+        // Thumbnail image (lazy loaded, async) — with display rotation
         Image {
             id: thumbImage
-            anchors.fill: parent
+            anchors.centerIn: parent
+            // When rotated 90/270, swap width/height so the image fits correctly
+            width: (cardRoot.displayRotation === 90 || cardRoot.displayRotation === 270) ? parent.height : parent.width
+            height: (cardRoot.displayRotation === 90 || cardRoot.displayRotation === 270) ? parent.width : parent.height
             source: cardRoot.thumbnailSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true
             mipmap: true
+
+            // Apply display-only rotation transform
+            rotation: -cardRoot.displayRotation  // Negative because QML rotation is CW, our value is CCW
+
+            Behavior on rotation {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
 
             // Loading placeholder
             Rectangle {
@@ -92,6 +108,43 @@ Item {
                 elide: Text.ElideMiddle
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignHCenter
+            }
+        }
+
+        // Rotate button — appears on hover (top-left corner)
+        Rectangle {
+            id: rotateBtn
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: 4
+            width: 24
+            height: 24
+            radius: 12
+            color: rotateMouse.containsMouse ? Theme.accent : "#88000000"
+            opacity: mouseArea.containsMouse ? 1 : 0
+            visible: opacity > 0
+            z: 10
+
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+
+            Text {
+                anchors.centerIn: parent
+                text: "↺"
+                color: "white"
+                font.bold: true
+                font.pixelSize: 14
+            }
+
+            MouseArea {
+                id: rotateMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (typeof cleanupController !== "undefined") {
+                        cleanupController.rotateImage(cardRoot.imageId)
+                    }
+                }
             }
         }
 
@@ -162,12 +215,6 @@ Item {
             
             onClicked: {
                 if (typeof cleanupController !== "undefined") {
-                    // Only focus/select on click, but for now we toggle unselected/rejected per instructions unless spacebar is used?
-                    // Ah, prompt says "Single click: focus/select image only. Explicit actions: K/X/Space".
-                    // Actually, if we just want it to focus, we should just emit a signal or set a focusedImage index. 
-                    // Let's implement Space for focus selection later, or if we want click to toggle:
-                    // Actually, the prompt says: "Do NOT use single-click state cycling... Single click: focus/select image only."
-                    // Since we don't have a specific "focused" state for the image card other than hover/keyboard focus, let's let click do standard Focus.
                     cardRoot.forceActiveFocus()
                 }
             }

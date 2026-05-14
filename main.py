@@ -26,6 +26,7 @@ from app.database.group_repository import GroupRepository
 from app.database.trash_repository import TrashRepository
 from app.services.trash_service import TrashService
 from app.controllers.cleanup_controller import CleanupController
+from app.controllers.face_controller import FaceController
 from app.services.duplicate_service import DuplicateService
 
 def main():
@@ -75,7 +76,11 @@ def main():
         debug_service,
         settings_controller=settings_controller
     )
-    cleanup_controller = CleanupController(trash_service, similarity_controller, debug_service)
+    cleanup_controller = CleanupController(trash_service, similarity_controller, image_repository, debug_service, scan_controller=scan_controller)
+    face_controller = FaceController()
+    
+    # 5.5 Connect cross-controller signals
+    scan_controller.duplicateRemovalFinished.connect(lambda _: cleanup_controller._refresh_staged_count())
     
     # 6. Register context properties (Python -> QML bridge)
     context = engine.rootContext()
@@ -85,6 +90,7 @@ def main():
     context.setContextProperty("debugController", debug_controller)
     context.setContextProperty("similarityController", similarity_controller)
     context.setContextProperty("cleanupController", cleanup_controller)
+    context.setContextProperty("faceController", face_controller)
     
     # 7. Load QML
     main_qml = ui_dir / "Main.qml"

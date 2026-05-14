@@ -16,6 +16,8 @@ class CleanupController(QObject):
     canUndoChanged = Signal()
     lastActionChanged = Signal()
     totalDeletedChanged = Signal()
+    stagedCountChanged = Signal()
+    displayRotationChanged = Signal(int, int)  # imageId, newRotation
     
     # Emitted when an action is completed, carrying a status message for the UI
     actionCompleted = Signal(str)
@@ -23,24 +25,35 @@ class CleanupController(QObject):
     def __init__(self, 
                  trash_service: TrashService, 
                  similarity_controller: SimilarityController,
+                 image_repository=None, # Injected in main.py
                  debug_service: DebugService = None,
+                 scan_controller=None,   # Injected in main.py for count updates
                  parent=None):
         super().__init__(parent)
         self._trash_service = trash_service
         self._similarity_controller = similarity_controller
+        self._image_repository = image_repository
         self._debug_service = debug_service
+        self._scan_controller = scan_controller
         
         self._selection_state = {}  # {imageId: "keeper" | "rejected" | "unselected"}
         self._group_states = {}     # {group_index: selection_state_dict} — per-group persistence
         self._current_group_idx = -1
         self._last_batch_id = None
+        self._last_batch_metadata = []  # Store image metadata for undo re-insertion
         self._last_action_msg = ""
         self._total_deleted = 0
+        self._staged_count = 0      # BUG 4: Cached staged count
         
         # When similarity controller changes group, auto-select a keeper
         self._similarity_controller.currentGroupIndexChanged.connect(self._on_group_changed)
 
     # ── Properties ────────────────────────────────────────────────────
+
+    @Property(int, notify=stagedCountChanged)
+    def stagedCount(self) -> int:
+        """Returns cached staged count (updated on staging changes)."""
+        return self._staged_count
 
     @Property(dict, notify=selectionStateChanged)
     def selectionState(self) -> dict:
@@ -70,11 +83,14 @@ class CleanupController(QObject):
 
     @Slot(int)
     def toggleSelection(self, image_id: int):
-        """Single click action: simple select/focus (unselected <-> rejected)."""
+        """Toggle image between unselected <-> rejected. Keepers can also be toggled back."""
         img_id_str = str(image_id)
         current_state = self._selection_state.get(img_id_str, "unselected")
         if current_state == "rejected":
             self._selection_state[img_id_str] = "unselected"
+        elif current_state == "keeper":
+            # Allow un-keepering via toggle (sets back to unselected)
+            self._selection_state[img_id_str] = "rejected"
         else:
             self._selection_state[img_id_str] = "rejected"
         self._selection_state = self._selection_state.copy()
@@ -82,18 +98,16 @@ class CleanupController(QObject):
 
     @Slot(int)
     def setKeeper(self, image_id: int):
-        """Set this image as the keeper. Unsets any existing keepers in the group."""
-        group_data = self._similarity_controller.getCurrentGroupData()
-        if not group_data or "images" not in group_data:
-            return
-            
+        """Toggle keeper state on this image. Multiple keepers are allowed per group."""
         img_id_str = str(image_id)
-        for img in group_data["images"]:
-            current_id_str = str(img["imageId"])
-            if current_id_str == img_id_str:
-                self._selection_state[current_id_str] = "keeper"
-            elif self._selection_state.get(current_id_str) == "keeper":
-                self._selection_state[current_id_str] = "unselected"
+        current_state = self._selection_state.get(img_id_str, "unselected")
+        
+        if current_state == "keeper":
+            # Toggle off: un-keeper this image
+            self._selection_state[img_id_str] = "unselected"
+        else:
+            # Toggle on: mark as keeper
+            self._selection_state[img_id_str] = "keeper"
                 
         self._selection_state = self._selection_state.copy()
         self._emit_selection_changes()
@@ -122,92 +136,147 @@ class CleanupController(QObject):
 
     @Slot()
     def executeCleanup(self):
-        """Moves all rejected files to the trash and auto-advances if successful."""
+        """Stages all rejected files for deletion and auto-advances."""
         group_data = self._similarity_controller.getCurrentGroupData()
         if not group_data or "images" not in group_data:
             return
             
-        files_to_trash = []
-        rejected_count = 0
-        
-        # We need the group index to know which group we're operating on
-        group_index = self._similarity_controller.currentGroupIndex
-        # But we need the actual DB group_id, let's use the scan_session_id = 1 assumption for now
-        # Actually, let's just extract original_path from the ViewModel
+        rejected_ids = []
         
         for img in group_data["images"]:
             img_id = img["imageId"]
-            img_id_str = str(img_id)
-            state = self._selection_state.get(img_id_str, "unselected")
+            state = self._selection_state.get(str(img_id), "unselected")
             
-            # Rule 6: Keeper protection
-            if state == "keeper":
-                continue
-                
             if state == "rejected":
-                uri = img["originalPath"]
-                # Convert file:// uri back to path
-                parsed = urlparse(uri)
-                path_str = url2pathname(parsed.path)
+                rejected_ids.append(img_id)
                 
-                # Strip leading slash on windows if present like \C:\...
-                if path_str.startswith("\\") and ":" in path_str:
-                    path_str = path_str[1:]
-                    
-                files_to_trash.append({
-                    "original_path": path_str,
-                    "group_id": None, # Optional, skip for now
-                    "scan_session_id": 1,
-                    "image_id": img_id
-                })
-                rejected_count += 1
-                
-        if not files_to_trash:
+        if not rejected_ids:
             logger.info("Execute cleanup called but no images are rejected.")
             self.actionCompleted.emit("No images selected for cleanup.")
             return
             
-        # Extract keeper ID to pass down to service layer for explicit protection
-        keeper_id = None
-        for k, v in self._selection_state.items():
-            if v == "keeper":
-                keeper_id = k
-                break
+        try:
+            if self._image_repository:
+                self._image_repository.stage_images_for_trash(rejected_ids)
+                
+            count = len(rejected_ids)
+            msg = f"Staged {count} image{'s' if count > 1 else ''} for deletion."
+            self._last_action_msg = msg
+            logger.info(msg)
+            
+            self._refresh_staged_count()
+            self.actionCompleted.emit(msg)
+            
+            # Save cleaned state for this group before auto-advancing
+            current_idx = self._similarity_controller.currentGroupIndex
+            self._group_states[current_idx] = self._selection_state.copy()
+            
+            # Auto-advance (Rule 1)
+            self._similarity_controller.nextGroup()
+                
+        except Exception as e:
+            logger.error(f"Staging execution failed: {e}")
+            self.actionCompleted.emit("Failed to stage images.")
+
+    @Slot()
+    def commitStagedChanges(self):
+        """Moves all staged files to the trash in one batch."""
+        if not self._image_repository:
+            return
+            
+        staged_images = self._image_repository.get_staged_images()
+        if not staged_images:
+            self.actionCompleted.emit("No staged changes to commit.")
+            return
+            
+        files_to_trash = []
+        staged_ids = []
+        # BUG 3 fix: Store metadata for potential undo re-insertion
+        batch_metadata = []
+        
+        for img in staged_images:
+            files_to_trash.append({
+                "original_path": img.original_path,
+                "group_id": None,
+                "scan_session_id": img.scan_session_id,
+                "image_id": img.id
+            })
+            staged_ids.append(img.id)
+            # Save all fields needed to recreate the record on undo
+            batch_metadata.append({
+                "id": img.id,
+                "original_path": img.original_path,
+                "file_name": img.file_name,
+                "extension": img.extension,
+                "width": img.width,
+                "height": img.height,
+                "file_size": img.file_size,
+                "created_at": img.created_at,
+                "modified_at": img.modified_at,
+                "thumbnail_path": img.thumbnail_path,
+                "scan_session_id": img.scan_session_id,
+                "phash": img.phash,
+                "dhash": img.dhash,
+                "hash_computed_at": img.hash_computed_at,
+            })
             
         batch_id = uuid.uuid4().hex
         
         try:
-            moved_count, freed_bytes = self._trash_service.move_to_trash(files_to_trash, batch_id, keeper_id=keeper_id)
+            moved_count, freed_bytes = self._trash_service.move_to_trash(files_to_trash, batch_id)
             
             if moved_count > 0:
+                # BUG 1 fix: Delete DB records (files are now in trash, records are stale)
+                self._image_repository.delete_images(staged_ids)
+                
                 self._last_batch_id = batch_id
+                self._last_batch_metadata = batch_metadata  # Save for undo
                 mb_freed = freed_bytes / (1024 * 1024)
-                msg = f"Moved {moved_count} image{'s' if moved_count > 1 else ''} to trash. Freed {mb_freed:.1f} MB."
+                msg = f"Successfully cleaned {moved_count} image{'s' if moved_count > 1 else ''}. Freed {mb_freed:.1f} MB."
                 self._last_action_msg = msg
                 logger.info(msg)
                 
                 self.canUndoChanged.emit()
                 self.lastActionChanged.emit()
+                self._refresh_staged_count()
                 self.actionCompleted.emit(msg)
                 
                 self._total_deleted += moved_count
                 self.totalDeletedChanged.emit()
                 
+                # BUG 6 fix: Update scan controller image counts
+                self._refresh_scan_counts()
+                
                 if self._debug_service:
                     self._debug_service.cleanup_executed(moved_count)
-                
-                # Save cleaned state for this group before auto-advancing
-                current_idx = self._similarity_controller.currentGroupIndex
-                self._group_states[current_idx] = self._selection_state.copy()
-                
-                # Auto-advance (Rule 1)
-                self._similarity_controller.nextGroup()
             else:
                 self.actionCompleted.emit("Failed to move files to trash.")
                 
         except Exception as e:
-            logger.error(f"Cleanup execution failed: {e}")
-            self.actionCompleted.emit("Cleanup failed due to an error.")
+            logger.error(f"Commit failed: {e}")
+            self.actionCompleted.emit("Commit failed due to an error.")
+
+    @Slot()
+    def clearStagedChanges(self):
+        """Reverts all staged deletion marks."""
+        if not self._image_repository:
+            return
+            
+        try:
+            self._image_repository.unstage_images_for_trash()
+            msg = "Discarded all staged changes."
+            self._last_action_msg = msg
+            logger.info(msg)
+            
+            self._refresh_staged_count()
+            self.actionCompleted.emit(msg)
+            
+            # Reset group states cache so they can be re-reviewed if needed
+            self._group_states.clear()
+            
+        except Exception as e:
+            logger.error(f"Clear staging failed: {e}")
+            self.actionCompleted.emit("Failed to clear staged changes.")
 
     @Slot()
     def undoLastCleanup(self):
@@ -217,19 +286,46 @@ class CleanupController(QObject):
             
         try:
             restored_count = self._trash_service.restore_batch(self._last_batch_id)
+            
+            # BUG 3 fix: Re-insert DB records for restored images
+            if restored_count > 0 and self._last_batch_metadata and self._image_repository:
+                for meta in self._last_batch_metadata:
+                    self._image_repository.upsert_image({
+                        "original_path": meta["original_path"],
+                        "file_name": meta["file_name"],
+                        "extension": meta["extension"],
+                        "width": meta["width"],
+                        "height": meta["height"],
+                        "file_size": meta["file_size"],
+                        "modified_at": meta["modified_at"],
+                        "thumbnail_path": meta["thumbnail_path"],
+                        "scan_session_id": meta["scan_session_id"],
+                        "phash": meta["phash"],
+                        "dhash": meta["dhash"],
+                    })
+            
             msg = f"Undid cleanup. Restored {restored_count} image{'s' if restored_count > 1 else ''}."
             self._last_action_msg = msg
             logger.info(msg)
             
             self._last_batch_id = None
+            self._last_batch_metadata = []
+            
+            # Update deleted count
+            self._total_deleted = max(0, self._total_deleted - restored_count)
+            self.totalDeletedChanged.emit()
+            
             self.canUndoChanged.emit()
             self.lastActionChanged.emit()
             self.actionCompleted.emit(msg)
             
+            # BUG 6 fix: Refresh scan counts after undo
+            self._refresh_scan_counts()
+            
             if self._debug_service:
                 self._debug_service.undo_executed(restored_count)
                 
-            # Optionally, we might want to navigate back to the previous group
+            # Navigate back to the previous group
             self._similarity_controller.previousGroup()
             
         except Exception as e:
@@ -237,6 +333,23 @@ class CleanupController(QObject):
             self.actionCompleted.emit("Undo failed due to an error.")
 
     # ── Internal ──────────────────────────────────────────────────────
+    
+    def _refresh_staged_count(self):
+        """Update the cached staged count from DB and emit signal."""
+        if self._image_repository:
+            self._staged_count = self._image_repository.get_staged_count()
+        else:
+            self._staged_count = 0
+        self.stagedCountChanged.emit()
+    
+    def _refresh_scan_counts(self):
+        """BUG 6 fix: Update scan controller's image counts to reflect DB changes."""
+        if self._scan_controller and self._image_repository:
+            remaining = self._image_repository.get_image_count()
+            self._scan_controller._total_images = remaining
+            self._scan_controller._scanned_count = remaining
+            self._scan_controller.totalImagesChanged.emit()
+            self._scan_controller.scannedCountChanged.emit()
     
     def _on_group_changed(self):
         """When navigating to a new group, save current state and restore/create state for new group."""
@@ -299,3 +412,29 @@ class CleanupController(QObject):
         self.selectionStateChanged.emit()
         self.keeperCountChanged.emit()
         self.rejectedCountChanged.emit()
+
+    # ── Display Rotation ──────────────────────────────────────────────
+
+    @Slot(int)
+    def rotateImage(self, image_id: int):
+        """Rotate an image 90° counter-clockwise (display only, does not touch original file).
+        
+        Cycles through: 0 → 270 → 180 → 90 → 0 (CCW rotation steps).
+        """
+        if not self._image_repository:
+            return
+        
+        # Get current rotation from DB
+        from app.database.connection import db
+        from app.models.image import Image
+        session = db.SessionLocal()
+        try:
+            img = session.query(Image).filter(Image.id == image_id).first()
+            if img:
+                current = img.display_rotation or 0
+                new_rotation = (current + 270) % 360  # +270 = -90 = 90° CCW
+                self._image_repository.set_display_rotation(image_id, new_rotation)
+                self.displayRotationChanged.emit(image_id, new_rotation)
+                logger.debug(f"Rotated image {image_id}: {current}° → {new_rotation}° CCW")
+        finally:
+            session.close()

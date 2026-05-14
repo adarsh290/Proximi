@@ -25,6 +25,12 @@ class Image(Base):
     dhash = Column(String, nullable=True, index=True)
     hash_computed_at = Column(DateTime, nullable=True)
 
+    # Staging State
+    is_staged_for_trash = Column(Integer, default=0)  # Using Integer (0/1) for SQLite Boolean compatibility
+
+    # Display-only rotation override (0, 90, 180, 270 degrees CCW) — never touches original file
+    display_rotation = Column(Integer, default=0)
+
     # Relationships
     scan_session = relationship("ScanSession", back_populates="images")
     group_memberships = relationship("GroupMember", back_populates="image", cascade="all, delete")
