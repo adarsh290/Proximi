@@ -174,6 +174,15 @@ data/
 - Automatically keeps the highest-quality version (largest file size)
 - Moves duplicates directly to `data/trash/` using `TrashService`
 
+### FaceService *(New — Milestone 6)*
+- Handles GPU-accelerated facial detection and embedding extraction using `insightface` (`buffalo_l` model)
+- Persists extracted face bounding boxes and crops to `data/faces/` for profile pictures
+- Falls back to CPU if `onnxruntime-gpu` is not available
+
+### ClusteringService *(New — Milestone 6)*
+- Performs unsupervised clustering of 512-d mathematical embeddings using `scikit-learn` DBSCAN algorithm
+- Persists clusters into the `people` and `faces` tables in the database
+
 ### TrashService *(New — Milestone 4)*
 - `move_to_trash(files, batch_id, keeper_id)` — moves files to `data/trash/`
 - Filename collision handling: `original__shortuuid.ext` (readable + unique)
@@ -181,7 +190,7 @@ data/
 - `restore_batch(batch_id)` — restores all files in a batch by batch UUID
 - Returns `(moved_count, freed_bytes)` for feedback messages
 
-### ScanWorker, SimilarityWorker & DuplicateWorker (QRunnable)
+### ScanWorker, SimilarityWorker, DuplicateWorker & FaceScanWorker (QRunnable)
 - Async workers on QThreadPool with progress reporting and cancellation support
 
 ---
@@ -208,6 +217,11 @@ data/
 - `executeCleanup()` — move rejected images to trash, auto-advance if successful
 - `undoLastCleanup()` — restore last batch, navigate back
 - `actionCompleted(str)` signal — carries feedback message for Footer toast
+
+### FaceController *(New — Milestone 6)*
+- Orchestrates facial detection and DBSCAN clustering via `FaceScanWorker`
+- Exposes `getPeople()` and `getPhotosForPerson(person_id)` as QML-accessible data bridges
+- Provides reactive `@Property` for `isScanning`, `progressCurrent`, and `statusText`
 
 ### DebugController
 - Toggle via `Ctrl+Shift+D`
@@ -248,6 +262,11 @@ data/
 - Shown when `similarityController.reviewComplete === true`
 - Displays: total groups reviewed, total images cleaned
 - Actions: "Undo Last Action" (if `canUndo`), "Review Again"
+
+### PeopleView & PersonGalleryView *(New — Milestone 6)*
+- Dedicated navigation space for viewing clustered faces and people
+- `PeopleView` renders circular profile pictures representing each cluster using cached `data/faces/` crops
+- `PersonGalleryView` filters the image grid to display only photos where a specific person is detected
 
 ### Footer
 - Left: status text — switches to toast message for ~2 seconds after cleanup actions

@@ -30,6 +30,7 @@ data/thumbnails/
 data/trash/
 data/logs/
 data/cache/
+data/faces/
 data/*.db
 data/*.db-shm
 data/*.db-wal
@@ -65,3 +66,4 @@ htmlcov/
 test/
 test-2/
 my.md
+Phone

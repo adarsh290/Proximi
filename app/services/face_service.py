@@ -27,7 +27,7 @@ class FaceService:
             from insightface.app import FaceAnalysis
             
             # Initialize model. Tries CUDA first, falls back to CPU.
-            self._app = FaceAnalysis(name='antelopev2', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            self._app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
             self._app.prepare(ctx_id=0, det_size=(640, 640))
             logger.info("InsightFace model initialized successfully.")
             return True
@@ -35,7 +35,8 @@ class FaceService:
             logger.error("ML dependencies (insightface/onnxruntime) are not installed.")
             return False
         except Exception as e:
-            logger.error(f"Failed to initialize insightface: {e}")
+            import traceback
+            logger.error(f"Failed to initialize insightface:\n{traceback.format_exc()}")
             return False
 
     def detect_and_extract_faces(self, image_path: str) -> List[Dict]:

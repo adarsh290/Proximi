@@ -16,6 +16,8 @@ Proximi helps you organize, scan, browse, and **safely clean up** large image co
 - **Similarity Detection** — Classical CV pipeline (pHash, dHash, SSIM) to find duplicates and burst shots
 - **Duplicate Cleanup** — Review groups, mark keepers, reject duplicates, and move to app-managed trash
 - **Safe Deletion** — Files are never permanently deleted — moved to `data/trash/` with one-step undo
+- **Facial Recognition** — Uses local machine learning (`insightface` & `onnxruntime-gpu`) to detect and group faces securely on your device
+- **People Gallery** — Automatically organizes photos by people with automatic profile pictures
 - **Keyboard-Driven Review** — Rapid group navigation and selection using keyboard shortcuts
 - **Full-Screen Preview** — Inspect images in a lightweight lightbox before making decisions
 - **Debug Panel** — Built-in diagnostics overlay (`Ctrl+Shift+D`) for runtime inspection
@@ -29,8 +31,9 @@ Proximi helps you organize, scan, browse, and **safely clean up** large image co
 | UI | Qt Quick / QML |
 | Backend | Python 3.11+, PySide6 |
 | Database | SQLite via SQLAlchemy |
-| Imaging | Pillow |
+| Imaging | Pillow, OpenCV |
 | Similarity | imagehash, scikit-image, networkx |
+| Machine Learning | insightface, onnxruntime-gpu, scikit-learn (DBSCAN) |
 | Architecture | Layered (UI → Controllers → Services → Repository) |
 
 ---
@@ -124,6 +127,8 @@ Summer-project/
 │   │   ├── grouping_service.py
 │   │   ├── similarity_worker.py
 │   │   ├── trash_service.py            # Move-to-trash + restore
+│   │   ├── face_service.py             # ML face detection/embeddings
+│   │   ├── clustering_service.py       # DBSCAN facial clustering
 │   │   └── debug_service.py
 │   ├── database/
 │   │   ├── connection.py
@@ -155,6 +160,7 @@ Summer-project/
 └── data/                               # Local runtime data (gitignored)
     ├── thumbnails/                     # Cached WEBP thumbnails
     ├── trash/                          # App-managed trash (not OS trash)
+    ├── faces/                          # Cropped ML profile pictures
     └── proximi.db                      # SQLite database
 ```
 
@@ -205,7 +211,8 @@ Repository (database persistence)
 | M3 — Similarity Engine | ✅ Complete | pHash/dHash/SSIM pipeline, NetworkX grouping, Group Review UI |
 | M4 — Cleanup Workflow | ✅ Complete | Trash system, keeper selection, undo, keyboard shortcuts, lightbox |
 | M5 — Exact Duplicates | ✅ Complete | Hash-based duplicate detection, automatic highest-quality keeper selection |
-| M6 — TBD | ⏳ Planned | Candidates: empty trash, export reports, settings persistence |
+| M6 — Facial Segregation | ✅ Complete | Insightface bounding boxes, embeddings, and DBSCAN clustering with People View |
+| M7 — TBD | ⏳ Planned | Candidates: empty trash, export reports, settings persistence |
 
 ---
 

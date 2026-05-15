@@ -7,6 +7,8 @@ Item {
     id: root
     
     property var peopleData: []
+    property int selectedPersonId: -1
+    property string selectedPersonName: ""
     
     // Refresh people list when scan finishes or when view becomes visible
     Connections {
@@ -28,12 +30,14 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Theme.bgMain
+        color: Theme.bgApp
 
+        // ── Main People List ──────────────────────────────────────────
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: Theme.spaceL
             spacing: Theme.spaceL
+            visible: root.selectedPersonId === -1
 
             // ── Header ───────────────────────────────────────────────────
             RowLayout {
@@ -53,6 +57,15 @@ Item {
                 }
             }
             
+            // Global Status text (for errors or success)
+            Text {
+                text: faceController.statusText
+                color: faceController.statusText.startsWith("Error") ? Theme.error : Theme.textMuted
+                font.pixelSize: Theme.fontSmall
+                Layout.alignment: Qt.AlignHCenter
+                visible: faceController.statusText !== ""
+            }
+
             // ── Scanning State Overlay ───────────────────────────────────
             ColumnLayout {
                 Layout.alignment: Qt.AlignHCenter
@@ -63,13 +76,6 @@ Item {
                     text: "Facial Recognition is running..."
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontMedium
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Text {
-                    text: faceController.statusText
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSmall
                     Layout.alignment: Qt.AlignHCenter
                 }
 
@@ -155,7 +161,8 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 console.log("Clicked person:", modelData.personId)
-                                // Next step: Open PersonGalleryView
+                                root.selectedPersonName = modelData.name
+                                root.selectedPersonId = modelData.personId
                             }
                         }
                     }
@@ -172,6 +179,17 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 visible: !faceController.isScanning && peopleData.length === 0
+            }
+        }
+        
+        // ── Person Gallery View ───────────────────────────────────────
+        PersonGalleryView {
+            anchors.fill: parent
+            visible: root.selectedPersonId !== -1
+            personId: root.selectedPersonId
+            personName: root.selectedPersonName
+            onBackRequested: {
+                root.selectedPersonId = -1
             }
         }
     }

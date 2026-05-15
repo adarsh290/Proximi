@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool
+from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Property
 from pathlib import Path
 from app.utils.logger import logger
 from app.database.connection import db
@@ -95,26 +95,29 @@ class FaceController(QObject):
         self._status_text = ""
 
     # ── Properties ────────────────────────────────────────────────────────
+    
+    isScanningChanged = Signal()
 
-    @property
+    @Property(bool, notify=isScanningChanged)
     def isScanning(self) -> bool:
         return self._is_scanning
 
-    @property
+    @Property(int, notify=scanProgressChanged)
     def progressCurrent(self) -> int:
         return self._progress_current
 
-    @property
+    @Property(int, notify=scanProgressChanged)
     def progressTotal(self) -> int:
         return self._progress_total
 
-    @property
+    @Property(str, notify=statusTextChanged)
     def statusText(self) -> str:
         return self._status_text
 
     def _set_is_scanning(self, val: bool):
         if self._is_scanning != val:
             self._is_scanning = val
+            self.isScanningChanged.emit()
             self.scanStarted.emit() if val else self.scanFinished.emit()
 
     def _set_status(self, text: str):
@@ -202,6 +205,40 @@ class FaceController(QObject):
             return results
         except Exception as e:
             logger.error(f"Failed to fetch people: {e}")
+            return []
+        finally:
+            session.close()
+
+    @Slot(int, result="QVariantList")
+    def getPhotosForPerson(self, person_id: int):
+        """Returns a list of image dicts (originalPath, thumbnailPath) for a specific person."""
+        session = db.SessionLocal()
+        try:
+            from app.models.face import Face
+            from app.models.image import Image
+            
+            # Find all faces belonging to this person
+            faces = session.query(Face).filter(Face.person_id == person_id).all()
+            
+            # Fetch the actual images
+            results = []
+            seen_image_ids = set()
+            for face in faces:
+                if face.image_id in seen_image_ids:
+                    continue
+                seen_image_ids.add(face.image_id)
+                
+                img = session.query(Image).filter(Image.id == face.image_id).first()
+                if img:
+                    results.append({
+                        "id": img.id,
+                        "originalPath": Path(img.original_path).resolve().as_uri() if img.original_path else "",
+                        "thumbnailPath": Path(img.thumbnail_path).resolve().as_uri() if img.thumbnail_path else "",
+                        "displayRotation": img.display_rotation
+                    })
+            return results
+        except Exception as e:
+            logger.error(f"Failed to fetch photos for person {person_id}: {e}")
             return []
         finally:
             session.close()
