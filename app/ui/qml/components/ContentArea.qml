@@ -38,7 +38,7 @@ Item {
         cellWidth: Theme.thumbnailSize + Theme.gridSpacing
         cellHeight: Theme.thumbnailSize + Theme.gridSpacing
         model: contentRoot.imageModel
-        cacheBuffer: 600  // Pre-render items slightly outside viewport
+        cacheBuffer: 2000  // Pre-render ~10 rows outside viewport for smooth scrolling
 
         ScrollBar.vertical: ScrollBar {
             id: vbar
@@ -63,16 +63,12 @@ Item {
             height: imageGrid.cellHeight - Theme.gridSpacing
             thumbnailSource: model.thumbnailPath || ""
             fileName: model.fileName || ""
+            isFlicking: imageGrid.flicking  // Disable smooth filter during fast scroll
         }
 
-        // Smooth scrolling
+        // Smooth scrolling tuning
         flickDeceleration: 3000
         maximumFlickVelocity: 4000
-
-        // Empty fill transition
-        add: Transition {
-            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
-        }
     }
 
     // Loading overlay (shown during scan, overlaid on top of growing grid)

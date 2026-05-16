@@ -1,5 +1,6 @@
 from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Property
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from app.utils.logger import logger
 from app.database.connection import db
 from app.models.image import Image
@@ -7,8 +8,19 @@ from app.models.face import Face
 from app.services.face_service import FaceService
 from app.services.clustering_service import ClusteringService
 
+# Batch DB commits every N images instead of every 1
+_FACE_DB_BATCH_SIZE = 20
+
+
 class FaceScanWorker(QRunnable):
-    """Background worker to extract faces and cluster them without freezing the UI."""
+    """Background worker to extract faces and cluster them without freezing the UI.
+    
+    Optimized with:
+    - Bulk DB queries: one query to fetch all paths, one bulk delete for old faces
+    - Pipelined image loading: a background thread pre-reads the next image from
+      disk while the GPU processes the current one
+    - Batched DB commits every _FACE_DB_BATCH_SIZE images
+    """
     
     class Signals(QObject):
         progress = Signal(int, int)  # current, total
@@ -26,55 +38,122 @@ class FaceScanWorker(QRunnable):
     def run(self):
         try:
             self.signals.statusText.emit("Initializing ML Models...")
-            # Init early to fail fast if missing deps
             if not self.face_service._init_model():
                 self.signals.error.emit("ML dependencies not found. Run pip install insightface onnxruntime-gpu")
                 return
 
+            import cv2
             session = db.SessionLocal()
             total = len(self.image_ids)
-            
+
             try:
-                for i, img_id in enumerate(self.image_ids):
-                    self.signals.progress.emit(i, total)
-                    self.signals.statusText.emit(f"Scanning face {i}/{total}")
-                    
-                    # Check if already scanned (we could track this in DB, but for MVP we just delete old faces for this image)
-                    img = session.query(Image).filter(Image.id == img_id).first()
-                    if not img or not img.original_path:
-                        continue
-                        
-                    # Delete existing faces for this image to prevent duplicates on rescan
-                    session.query(Face).filter(Face.image_id == img.id).delete()
-                    
-                    # Detect faces
-                    results = self.face_service.detect_and_extract_faces(img.original_path)
-                    
-                    for res in results:
-                        l, t, r, b = res['bbox']
-                        face = Face(
-                            image_id=img.id,
-                            bbox_left=l,
-                            bbox_top=t,
-                            bbox_right=r,
-                            bbox_bottom=b,
-                            embedding=res['embedding'],
-                            face_crop_path=res['crop_path']
-                        )
-                        session.add(face)
-                        
+                # Bulk pre-fetch all image paths in one query
+                all_images = session.query(Image.id, Image.original_path).filter(
+                    Image.id.in_(self.image_ids)
+                ).all()
+                image_map = {img.id: img.original_path for img in all_images if img.original_path}
+
+                # Bulk delete old faces in one query
+                session.query(Face).filter(Face.image_id.in_(list(image_map.keys()))).delete(
+                    synchronize_session=False
+                )
+                session.commit()
+
+                def _preload_image(path: str):
+                    try:
+                        return cv2.imread(path)
+                    except Exception:
+                        return None
+
+                pending_since_commit = 0
+                work_list = [(img_id, image_map[img_id]) for img_id in self.image_ids if img_id in image_map]
+
+                with ThreadPoolExecutor(max_workers=1, thread_name_prefix="img_preload") as preloader:
+                    preload_future = None
+                    preload_img_id = None
+
+                    for i, (img_id, img_path) in enumerate(work_list):
+                        self.signals.progress.emit(i, total)
+                        self.signals.statusText.emit(f"Scanning face {i + 1}/{total}")
+
+                        # Get image: from pre-loaded future or read now
+                        if preload_future is not None and preload_img_id == img_id:
+                            cv_img = preload_future.result()
+                        else:
+                            cv_img = cv2.imread(img_path)
+
+                        # Submit NEXT image for pre-loading (pipeline)
+                        if i + 1 < len(work_list):
+                            next_id, next_path = work_list[i + 1]
+                            preload_future = preloader.submit(_preload_image, next_path)
+                            preload_img_id = next_id
+                        else:
+                            preload_future = None
+
+                        if cv_img is None:
+                            continue
+
+                        # GPU inference
+                        results = self.face_service.detect_faces_from_array(cv_img, img_path)
+
+                        for res in results:
+                            l, t, r, b = res['bbox']
+                            face = Face(
+                                image_id=img_id,
+                                bbox_left=l,
+                                bbox_top=t,
+                                bbox_right=r,
+                                bbox_bottom=b,
+                                embedding=res['embedding'],
+                                face_crop_path=res['crop_path']
+                            )
+                            session.add(face)
+
+                        pending_since_commit += 1
+                        if pending_since_commit >= _FACE_DB_BATCH_SIZE:
+                            session.commit()
+                            pending_since_commit = 0
+
+                if pending_since_commit > 0:
                     session.commit()
-                    
+
                 self.signals.statusText.emit("Clustering faces...")
                 self.clustering_service.cluster_faces()
-                
                 self.signals.finished.emit()
+
             finally:
                 session.close()
-                
+
         except Exception as e:
             logger.error(f"Face scan worker error: {e}")
             self.signals.error.emit(str(e))
+
+
+class ModelPrewarmWorker(QRunnable):
+    """Lightweight worker that initializes InsightFace models in the background.
+    
+    Started when a scan begins so the ~40s model load overlaps with scanning.
+    The models are stored in the shared FaceService singleton so the actual
+    face scan skips initialization entirely.
+    """
+
+    class Signals(QObject):
+        finished = Signal(bool)  # success
+
+    def __init__(self, face_service: FaceService):
+        super().__init__()
+        self.face_service = face_service
+        self.signals = self.Signals()
+        self.setAutoDelete(True)
+
+    def run(self):
+        logger.info("Pre-warming InsightFace model during scan...")
+        success = self.face_service._init_model()
+        if success:
+            logger.info("InsightFace model pre-warmed successfully.")
+        else:
+            logger.warning("InsightFace model pre-warm failed (will retry on face scan).")
+        self.signals.finished.emit(success)
 
 
 class FaceController(QObject):
@@ -93,6 +172,8 @@ class FaceController(QObject):
         self._progress_current = 0
         self._progress_total = 0
         self._status_text = ""
+        self._shared_face_service = FaceService()  # Shared instance for pre-warming
+        self._model_ready = False
 
     # ── Properties ────────────────────────────────────────────────────────
     
@@ -125,6 +206,24 @@ class FaceController(QObject):
             self._status_text = text
             self.statusTextChanged.emit()
 
+    # ── Pre-warming ───────────────────────────────────────────────────────
+
+    def prewarmModel(self):
+        """Start loading the ML model in the background.
+        
+        Called by ScanController when a scan starts so the ~40s model 
+        initialization overlaps with the scan instead of happening after.
+        """
+        if self._model_ready or self._shared_face_service._is_initialized:
+            return  # Already loaded or loading
+
+        worker = ModelPrewarmWorker(self._shared_face_service)
+        worker.signals.finished.connect(self._on_prewarm_finished)
+        self._thread_pool.start(worker)
+
+    def _on_prewarm_finished(self, success: bool):
+        self._model_ready = success
+
     # ── Slots ─────────────────────────────────────────────────────────────
 
     @Slot()
@@ -135,7 +234,6 @@ class FaceController(QObject):
             
         session = db.SessionLocal()
         try:
-            # For MVP, just rescan all images. In prod, filter by a 'faces_scanned' flag
             images = session.query(Image.id).all()
             image_ids = [img.id for img in images]
         finally:
@@ -151,7 +249,9 @@ class FaceController(QObject):
         self._set_status("Starting face scan...")
         self.scanProgressChanged.emit()
         
-        worker = FaceScanWorker(image_ids)
+        worker = FaceScanWorker(image_ids=image_ids)
+        # Share the pre-warmed model so it skips the 40s init
+        worker.face_service = self._shared_face_service
         worker.signals.progress.connect(self._on_progress)
         worker.signals.statusText.connect(self._set_status)
         worker.signals.finished.connect(self._on_finished)
@@ -190,7 +290,6 @@ class FaceController(QObject):
                     if face and face.face_crop_path:
                         pfp_path = Path(face.face_crop_path).resolve().as_uri()
                         
-                # Also count how many faces belong to this person
                 face_count = session.query(Face).filter(Face.person_id == p.id).count()
                 
                 results.append({
@@ -200,7 +299,6 @@ class FaceController(QObject):
                     "faceCount": face_count
                 })
             
-            # Sort by face count descending
             results.sort(key=lambda x: x["faceCount"], reverse=True)
             return results
         except Exception as e:
@@ -217,10 +315,8 @@ class FaceController(QObject):
             from app.models.face import Face
             from app.models.image import Image
             
-            # Find all faces belonging to this person
             faces = session.query(Face).filter(Face.person_id == person_id).all()
             
-            # Fetch the actual images
             results = []
             seen_image_ids = set()
             for face in faces:

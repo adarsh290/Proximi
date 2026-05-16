@@ -9,6 +9,7 @@ Item {
     property int imageId: -1
     property string selectionState: "unselected"
     property int displayRotation: 0  // 0, 90, 180, 270 degrees CCW
+    property bool isFlicking: false   // Bound from parent GridView — disables smooth during fast scroll
 
     Component.onCompleted: {
         if (typeof cleanupController !== "undefined" && cardRoot.imageId !== -1) {
@@ -49,8 +50,11 @@ Item {
             source: cardRoot.thumbnailSource
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            smooth: true
-            mipmap: true
+            smooth: !cardRoot.isFlicking  // Skip bilinear filter during fast scroll
+            cache: true
+            // Constrain decoded size to display size — prevents loading full-res into GPU
+            sourceSize.width: parent.width
+            sourceSize.height: parent.height
 
             // Apply display-only rotation transform
             rotation: -cardRoot.displayRotation  // Negative because QML rotation is CW, our value is CCW

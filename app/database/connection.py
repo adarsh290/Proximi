@@ -28,6 +28,15 @@ class DatabaseConnection:
                 connect_args={"check_same_thread": False},
                 echo=False # Set to True for SQL logging
             )
+
+            # Enable WAL mode for concurrent read/write from scan + face threads
+            from sqlalchemy import event, text
+            @event.listens_for(self.engine, "connect")
+            def _set_sqlite_pragma(dbapi_conn, connection_record):
+                cursor = dbapi_conn.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.close()
             
             # Create session factory
             session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)

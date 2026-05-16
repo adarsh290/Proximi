@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.database.image_repository import ImageRepository
 from app.services.thumbnail_service import ThumbnailService
@@ -11,16 +12,21 @@ from app.utils.logger import logger
 # Supported image extensions
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 
+# Parallelism tuning
+_THUMBNAIL_WORKERS = 6       # Parallel thumbnail generation threads
+_DB_BATCH_SIZE = 50           # Batch DB writes every N images
+
 
 class ScanService:
     """Orchestrates folder scanning, thumbnail generation, and DB persistence.
     
-    Pipeline order per image:
+    Pipeline (optimized):
         1. Recursive discovery
-        2. Metadata extraction (stat + dimensions)
-        3. DB persistence (upsert image record)
-        4. Thumbnail generation (Pillow → WEBP cache)
-        5. Progressive UI update (via callback)
+        2. Parallel processing via ThreadPoolExecutor:
+           - Metadata extraction (stat + dimensions)
+           - Thumbnail generation (Pillow → WEBP cache)
+        3. Batched DB persistence (every _DB_BATCH_SIZE images)
+        4. Progressive UI updates (via callback)
     """
 
     def __init__(self, image_repository: ImageRepository, thumbnail_service: ThumbnailService, debug_service=None):
@@ -65,6 +71,51 @@ class ScanService:
                 logger.info(f"  Skipped {count} files with extension '{ext}'")
 
         return discovered
+
+    def _process_single_image_io(self, image_path: Path) -> Optional[dict]:
+        """Pure I/O work for a single image: stat, dimensions, thumbnail.
+        
+        This method does NO database work — it's safe to run from any thread.
+        Returns a dict with all the data needed for DB persistence, or None.
+        """
+        try:
+            original_path = str(image_path)
+
+            # ── Step 1: Metadata extraction ───────────────────────────
+            stat = image_path.stat()
+            file_size = stat.st_size
+            modified_timestamp = stat.st_mtime
+            modified_at = datetime.fromtimestamp(modified_timestamp)
+
+            # Read dimensions
+            width, height = self.thumbnail_service.get_image_dimensions(original_path)
+
+            # ── Step 2: Thumbnail generation ──────────────────────────
+            thumbnail_path = self.thumbnail_service.generate_thumbnail(
+                original_path, modified_timestamp
+            )
+
+            return {
+                "original_path": original_path,
+                "file_name": image_path.name,
+                "extension": image_path.suffix.lower(),
+                "width": width,
+                "height": height,
+                "file_size": file_size,
+                "modified_at": modified_at,
+                "thumbnail_path": thumbnail_path,
+                "modified_timestamp": modified_timestamp,
+            }
+
+        except PermissionError:
+            logger.warning(f"Permission denied: '{image_path}'")
+            return None
+        except OSError as e:
+            logger.warning(f"OS error processing '{image_path}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error processing '{image_path}': {e}")
+            return None
 
     def process_single_image(
         self,
@@ -155,7 +206,12 @@ class ScanService:
         on_progress: Optional[Callable] = None,
         is_cancelled: Optional[Callable] = None,
     ) -> int:
-        """Full scan pipeline: discover → process → persist.
+        """Full scan pipeline: discover → parallel process → batched persist.
+        
+        Optimizations over the original sequential pipeline:
+        - Thumbnail generation (the heaviest I/O) runs on a ThreadPoolExecutor
+        - DB writes are batched every _DB_BATCH_SIZE images instead of 2 writes/image
+        - Skip-detection still works for unchanged images
         
         Args:
             folder_path: Path to the folder to scan.
@@ -182,37 +238,121 @@ class ScanService:
         if self._debug_service:
             self._debug_service.scan_started(folder_path, total, session_id)
 
-        processed_count = 0
+        # ── Phase 1: Quick skip-check for unchanged images ────────────
+        # Separate images into "needs processing" vs "already cached"
+        to_process = []
+        skipped_results = []
 
-        for index, image_path in enumerate(image_paths):
-            # Check cancellation before each image
+        for image_path in image_paths:
             if is_cancelled and is_cancelled():
-                logger.info(f"Scan cancelled after {processed_count} images.")
-                self.image_repository.complete_scan_session(session_id, processed_count)
-                return processed_count
+                break
+            original_path = str(image_path)
+            try:
+                stat = image_path.stat()
+                modified_at = datetime.fromtimestamp(stat.st_mtime)
+                existing = self.image_repository.get_image_by_path(original_path)
+                if existing and existing.modified_at == modified_at and existing.thumbnail_path:
+                    skipped_results.append({
+                        "original_path": existing.original_path,
+                        "thumbnail_path": existing.thumbnail_path,
+                        "file_name": existing.file_name,
+                        "skipped": True,
+                    })
+                    continue
+            except Exception:
+                pass  # Fall through to processing
+            to_process.append(image_path)
 
-            result = self.process_single_image(image_path, session_id)
+        logger.info(f"Skip-check complete: {len(skipped_results)} cached, {len(to_process)} to process.")
 
-            if result:
-                processed_count += 1
-                # Report to debug service
-                if self._debug_service:
-                    self._debug_service.scan_image_processed(skipped=result.get("skipped", False))
-                if on_image_ready and result.get("thumbnail_path"):
-                    on_image_ready(
-                        result["original_path"],
-                        result["thumbnail_path"],
-                        result["file_name"],
-                    )
-            else:
-                # Failed image
-                if self._debug_service:
-                    self._debug_service.scan_image_failed()
+        # Emit skipped images immediately to the UI
+        processed_count = 0
+        for result in skipped_results:
+            processed_count += 1
+            if self._debug_service:
+                self._debug_service.scan_image_processed(skipped=True)
+            if on_image_ready and result.get("thumbnail_path"):
+                on_image_ready(result["original_path"], result["thumbnail_path"], result["file_name"])
 
-            if on_progress:
-                on_progress(index + 1, total)
+        if on_progress:
+            on_progress(processed_count, total)
+
+        # ── Phase 2: Parallel I/O for new images ──────────────────────
+        # Thumbnail generation is I/O-bound (decode + resize + encode).
+        # We parallelize this across multiple threads.
+        if to_process and not (is_cancelled and is_cancelled()):
+            pending_batch = []
+
+            with ThreadPoolExecutor(max_workers=_THUMBNAIL_WORKERS) as executor:
+                future_to_path = {
+                    executor.submit(self._process_single_image_io, path): path
+                    for path in to_process
+                }
+
+                for future in as_completed(future_to_path):
+                    if is_cancelled and is_cancelled():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+
+                    io_result = future.result()
+
+                    if io_result:
+                        # Prepare data for batched DB write
+                        pending_batch.append({
+                            "image_data": {
+                                "original_path": io_result["original_path"],
+                                "file_name": io_result["file_name"],
+                                "extension": io_result["extension"],
+                                "width": io_result["width"],
+                                "height": io_result["height"],
+                                "file_size": io_result["file_size"],
+                                "modified_at": io_result["modified_at"],
+                                "thumbnail_path": io_result["thumbnail_path"],
+                                "scan_session_id": session_id,
+                            },
+                            "callback_data": {
+                                "original_path": io_result["original_path"],
+                                "thumbnail_path": io_result["thumbnail_path"] or "",
+                                "file_name": io_result["file_name"],
+                            }
+                        })
+                    else:
+                        if self._debug_service:
+                            self._debug_service.scan_image_failed()
+
+                    # Flush batch to DB when it reaches _DB_BATCH_SIZE
+                    if len(pending_batch) >= _DB_BATCH_SIZE:
+                        self._flush_batch(pending_batch, on_image_ready)
+                        processed_count += len(pending_batch)
+                        pending_batch = []
+
+                    if on_progress:
+                        on_progress(processed_count + len(pending_batch), total)
+
+                # Flush remaining
+                if pending_batch:
+                    self._flush_batch(pending_batch, on_image_ready)
+                    processed_count += len(pending_batch)
+
+        if on_progress:
+            on_progress(total, total)
 
         # Complete session
         self.image_repository.complete_scan_session(session_id, processed_count)
         logger.info(f"Scan complete: {processed_count}/{total} images processed")
         return processed_count
+
+    def _flush_batch(self, batch: list[dict], on_image_ready: Optional[Callable] = None):
+        """Persist a batch of processed images to the DB and notify the UI."""
+        for item in batch:
+            try:
+                self.image_repository.upsert_image(item["image_data"])
+
+                if self._debug_service:
+                    self._debug_service.scan_image_processed(skipped=False)
+
+                cb = item["callback_data"]
+                if on_image_ready and cb["thumbnail_path"]:
+                    on_image_ready(cb["original_path"], cb["thumbnail_path"], cb["file_name"])
+            except Exception as e:
+                logger.error(f"Failed to persist image: {e}")

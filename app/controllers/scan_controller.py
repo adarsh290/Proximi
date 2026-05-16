@@ -48,6 +48,10 @@ class ScanController(QObject):
     
     Manages the scan lifecycle: folder selection → scan execution → progress reporting.
     All heavy work runs on QThreadPool via ScanWorker.
+    
+    When a face_controller is provided, the scan automatically:
+    1. Pre-warms the ML model during the scan (overlapping the ~40s init)
+    2. Auto-triggers face detection as soon as the scan completes
     """
 
     # ── Signals ───────────────────────────────────────────────────────
@@ -68,12 +72,13 @@ class ScanController(QObject):
     duplicateRemovalError = Signal(str)
     isRemovingDuplicatesChanged = Signal()
 
-    def __init__(self, scan_service: ScanService, duplicate_service: DuplicateService, image_repository: ImageRepository, debug_service: DebugService = None, parent=None):
+    def __init__(self, scan_service: ScanService, duplicate_service: DuplicateService, image_repository: ImageRepository, debug_service: DebugService = None, face_controller=None, parent=None):
         super().__init__(parent)
         self._scan_service = scan_service
         self._duplicate_service = duplicate_service
         self._image_repository = image_repository
         self._debug_service = debug_service
+        self._face_controller = face_controller
         self._current_folder = ""
         self._scan_state = "empty"     # empty | scanning | loaded
         self._scan_progress = 0        # 0-100
@@ -167,6 +172,13 @@ class ScanController(QObject):
         self.totalImagesChanged.emit()
         self.scanStarted.emit()
 
+        # Pre-warm the InsightFace ML model during the scan.
+        # The model takes ~40s to load — by starting now, it overlaps with the
+        # scan's I/O work and is ready instantly when face detection begins.
+        if self._face_controller is not None:
+            self._face_controller.prewarmModel()
+            logger.info("InsightFace model pre-warming started (overlaps with scan).")
+
         # Create worker and connect signals
         self._worker = ScanWorker(self._scan_service, self._current_folder)
         self._worker.signals.image_ready.connect(self._on_image_ready)
@@ -237,7 +249,7 @@ class ScanController(QObject):
         self.scanProgressChanged.emit()
 
     def _on_finished(self, total_processed: int):
-        """Handle scan completion."""
+        """Handle scan completion. Auto-triggers face detection if available."""
         self._scan_state = "loaded"
         self._scan_progress = 100
         self._has_scanned_current_folder = True
@@ -249,6 +261,12 @@ class ScanController(QObject):
         self.scanProgressChanged.emit()
         self.scanFinished.emit(total_processed)
         logger.info(f"Scan finished: {total_processed} images processed.")
+
+        # Auto-trigger face detection now that scan is done.
+        # The model was pre-warmed during the scan, so init is ~instant.
+        if self._face_controller is not None and total_processed > 0:
+            logger.info("Auto-triggering face detection (model was pre-warmed during scan).")
+            self._face_controller.startFaceScan()
 
     def _on_error(self, error_msg: str):
         """Handle scan failure."""

@@ -66,7 +66,8 @@ def main():
     # 5. Initialize Controllers
     app_controller = AppController()
     settings_controller = SettingsController(settings_service)
-    scan_controller = ScanController(scan_service, duplicate_service, image_repository, debug_service)
+    face_controller = FaceController()  # Created early — injected into scan_controller for pipelined face detection
+    scan_controller = ScanController(scan_service, duplicate_service, image_repository, debug_service, face_controller=face_controller)
     debug_controller = DebugController(debug_service)
     similarity_controller = SimilarityController(
         hash_service, 
@@ -77,7 +78,6 @@ def main():
         settings_controller=settings_controller
     )
     cleanup_controller = CleanupController(trash_service, similarity_controller, image_repository, debug_service, scan_controller=scan_controller)
-    face_controller = FaceController()
     
     # 5.5 Connect cross-controller signals
     scan_controller.duplicateRemovalFinished.connect(lambda _: cleanup_controller._refresh_staged_count())

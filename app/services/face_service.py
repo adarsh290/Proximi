@@ -51,12 +51,35 @@ class FaceService:
         import cv2
         
         try:
-            # Read image using OpenCV (BGR format as expected by InsightFace)
             img = cv2.imread(image_path)
             if img is None:
                 logger.warning(f"Failed to read image for face detection: {image_path}")
                 return []
-                
+            return self.detect_faces_from_array(img, image_path)
+        except Exception as e:
+            logger.error(f"Error extracting faces from {image_path}: {e}")
+            return []
+
+    def detect_faces_from_array(self, img: np.ndarray, image_path: str) -> List[Dict]:
+        """Detect faces from a pre-loaded OpenCV image array.
+        
+        This method separates GPU inference from disk I/O, enabling the caller
+        to pre-load images on a background thread while the GPU processes the
+        current one (pipeline parallelism).
+        
+        Args:
+            img: A BGR numpy array (as returned by cv2.imread).
+            image_path: Original path, used only for logging.
+            
+        Returns:
+            A list of dicts: {'bbox': (l, t, r, b), 'embedding': bytes, 'crop_path': str}
+        """
+        if not self._init_model():
+            return []
+
+        import cv2
+
+        try:
             faces = self._app.get(img)
             results = []
             
@@ -96,3 +119,4 @@ class FaceService:
         except Exception as e:
             logger.error(f"Error extracting faces from {image_path}: {e}")
             return []
+
