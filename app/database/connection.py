@@ -36,6 +36,9 @@ class DatabaseConnection:
                 cursor = dbapi_conn.cursor()
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA cache_size=-32000")
+                cursor.execute("PRAGMA mmap_size=268435456")
                 cursor.close()
             
             # Create session factory
@@ -62,6 +65,7 @@ class DatabaseConnection:
         """Disposes the SQLAlchemy engine, releasing database file locks."""
         if self.SessionLocal:
             self.SessionLocal.remove()
+            self.SessionLocal = None
         if self.engine:
             self.engine.dispose()
             self.engine = None

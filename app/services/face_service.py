@@ -3,6 +3,7 @@ import uuid
 import numpy as np
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+import threading
 
 from app.utils.logger import logger
 
@@ -10,34 +11,43 @@ from app.utils.logger import logger
 class FaceService:
     """Service to handle facial detection and embedding extraction using InsightFace."""
     
+    BATCH_SIZE = 8
+    
     def __init__(self, cache_dir: str = "data/faces"):
         self.cache_dir = Path(cache_dir).resolve()
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._app = None
         self._is_initialized = False
+        self._lock = threading.Lock()
         
     def _init_model(self):
         """Lazy initialization of the ML models to prevent startup lag and handle missing dependencies."""
         if self._is_initialized:
             return self._app is not None
             
-        self._is_initialized = True
-        try:
-            import insightface
-            from insightface.app import FaceAnalysis
-            
-            # Initialize model. Tries CUDA first, falls back to CPU.
-            self._app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-            self._app.prepare(ctx_id=0, det_size=(640, 640))
-            logger.info("InsightFace model initialized successfully.")
-            return True
-        except ImportError:
-            logger.error("ML dependencies (insightface/onnxruntime) are not installed.")
-            return False
-        except Exception as e:
-            import traceback
-            logger.error(f"Failed to initialize insightface:\n{traceback.format_exc()}")
-            return False
+        with self._lock:
+            if self._is_initialized:
+                return self._app is not None
+
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                import insightface
+                from insightface.app import FaceAnalysis
+                
+                # Initialize model. Tries CUDA first, falls back to CPU.
+                self._app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                self._app.prepare(ctx_id=0, det_size=(640, 640))
+                self._is_initialized = True
+                logger.info("InsightFace model initialized successfully.")
+                return True
+            except ImportError:
+                self._is_initialized = True
+                logger.error("ML dependencies (insightface/onnxruntime) are not installed.")
+                return False
+            except Exception as e:
+                self._is_initialized = True
+                import traceback
+                logger.error(f"Failed to initialize insightface:\n{traceback.format_exc()}")
+                return False
 
     def detect_and_extract_faces(self, image_path: str) -> List[Dict]:
         """Detect faces, extract embeddings, crop the face, and save to cache.
@@ -119,4 +129,35 @@ class FaceService:
         except Exception as e:
             logger.error(f"Error extracting faces from {image_path}: {e}")
             return []
+
+    def detect_faces_batch(self, image_items: List[Tuple[np.ndarray, str]]) -> List[List[Dict]]:
+        """Process a batch of images concurrently to maximize GPU utilization.
+        
+        Uses ThreadPoolExecutor because InsightFace's Python API handles concurrent 
+        ONNXRuntime requests efficiently, effectively batching them on the GPU
+        without requiring manual 4D tensor stacking and custom preprocessing.
+        """
+        if not self._init_model():
+            return [[] for _ in image_items]
+            
+        results = [[] for _ in image_items]
+        
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def _process_one(idx, img, path):
+            try:
+                if img is None:
+                    return idx, []
+                return idx, self.detect_faces_from_array(img, path)
+            except Exception as e:
+                logger.error(f"Error processing batch item {path}: {e}")
+                return idx, []
+                
+        with ThreadPoolExecutor(max_workers=self.BATCH_SIZE) as executor:
+            futures = [executor.submit(_process_one, i, item[0], item[1]) for i, item in enumerate(image_items)]
+            for future in futures:
+                idx, res = future.result()
+                results[idx] = res
+                
+        return results
 

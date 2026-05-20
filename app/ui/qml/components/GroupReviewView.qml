@@ -93,8 +93,15 @@ Item {
                 displayRotation: model.displayRotation || 0
                 
                 onRequestPreview: {
-                    if (typeof previewModal !== "undefined") {
-                        previewModal.openPreview(model.originalPath)
+                    if (typeof globalPreviewModal !== "undefined" && reviewRoot.currentGroup && reviewRoot.currentGroup.images) {
+                        var list = []
+                        for (var i = 0; i < reviewRoot.currentGroup.images.length; i++) {
+                            list.push({
+                                source: reviewRoot.currentGroup.images[i].originalPath,
+                                fileName: reviewRoot.currentGroup.images[i].fileName || ""
+                            })
+                        }
+                        globalPreviewModal.openPreviewList(list, index)
                     }
                 }
             }
@@ -136,33 +143,49 @@ Item {
         z: 50
     }
     
-    ImagePreviewModal {
-        id: previewModal
-        anchors.fill: parent
-        z: 100 // Ensure it's on top
+
+
+    // Keyboard Shortcuts at the view level (robust against focus stealing)
+    Shortcut {
+        sequence: "Right"
+        onActivated: {
+            if (typeof similarityController !== "undefined") similarityController.nextGroup()
+        }
     }
-
-    // Keyboard Shortcuts at the view level
-    Item {
-        focus: true // Capture keys when view has focus
-        Keys.onPressed: (event) => {
-            if (typeof similarityController === "undefined" || typeof cleanupController === "undefined") return;
-
-            if (event.key === Qt.Key_Right || event.key === Qt.Key_D) {
-                similarityController.nextGroup()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Left || event.key === Qt.Key_A) {
-                similarityController.previousGroup()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier)) {
-                cleanupController.undoLastCleanup()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
-                if (event.modifiers & Qt.ControlModifier) {
-                    cleanupController.executeCleanup()
-                    event.accepted = true
-                }
-            }
+    Shortcut {
+        sequence: "D"
+        onActivated: {
+            if (typeof similarityController !== "undefined") similarityController.nextGroup()
+        }
+    }
+    Shortcut {
+        sequence: "Left"
+        onActivated: {
+            if (typeof similarityController !== "undefined") similarityController.previousGroup()
+        }
+    }
+    Shortcut {
+        sequence: "A"
+        onActivated: {
+            if (typeof similarityController !== "undefined") similarityController.previousGroup()
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+Z"
+        onActivated: {
+            if (typeof cleanupController !== "undefined") cleanupController.undoLastCleanup()
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+Enter"
+        onActivated: {
+            if (typeof cleanupController !== "undefined") cleanupController.executeCleanup()
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+Return"
+        onActivated: {
+            if (typeof cleanupController !== "undefined") cleanupController.executeCleanup()
         }
     }
 }

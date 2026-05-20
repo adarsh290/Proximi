@@ -62,7 +62,7 @@ class ScanController(QObject):
     totalImagesChanged = Signal()
     hasScannedCurrentFolderChanged = Signal()
     scanStarted = Signal()
-    imageReady = Signal(str, str, str)  # original_path, thumbnail_path, file_name
+    imageReady = Signal(int, str, str, str)  # image_id, original_path, thumbnail_path, file_name
     scanFinished = Signal(int)          # total processed
 
     # Duplicate Removal Signals
@@ -223,11 +223,7 @@ class ScanController(QObject):
         result = []
         for img in images:
             if img.thumbnail_path:
-                vm = ImageViewModel.from_raw(
-                    original_path=img.original_path,
-                    thumbnail_path=img.thumbnail_path,
-                    file_name=img.file_name
-                )
+                vm = ImageViewModel.from_image(img)
                 result.append(vm)
         return result
 
@@ -239,7 +235,9 @@ class ScanController(QObject):
         self.scannedCountChanged.emit()
         
         vm = ImageViewModel.from_raw(original_path, thumbnail_path, file_name)
-        self.imageReady.emit(vm["originalPath"], vm["thumbnailPath"], vm["fileName"])
+        # imageId is not available during fast streaming — use -1 for main grid;
+        # GroupReviewView gets proper imageIds from group data separately.
+        self.imageReady.emit(-1, vm["originalPath"], vm["thumbnailPath"], vm["fileName"])
 
     def _on_progress(self, current: int, total: int):
         """Update progress properties."""

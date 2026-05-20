@@ -4,10 +4,20 @@ import QtQuick.Layouts
 import themes 1.0
 
 Rectangle {
-    color: Theme.bgPanel
+    color: Theme.bgGlass
+
+    // Bottom glow line
+    Rectangle {
+        anchors.bottom: parent.bottom
+        width: parent.width
+        height: 1
+        color: Theme.accentGlow
+    }
 
     // Derived state helpers
     property bool hasFolder: typeof scanController !== "undefined" && scanController.currentFolder !== ""
+    property string currentView: "photos"
+    signal viewToggled()
     property bool isScanning: typeof scanController !== "undefined" && scanController.scanState === "scanning"
     property bool isLoaded: typeof scanController !== "undefined" && scanController.scanState === "loaded"
     property bool hasScanned: typeof scanController !== "undefined" && scanController.hasScannedCurrentFolder
@@ -20,8 +30,9 @@ Rectangle {
         Text {
             text: "Proximi"
             color: Theme.textPrimary
-            font.pixelSize: Theme.fontTitle
-            font.bold: true
+            font.pixelSize: Theme.fontDisplay
+            font.weight: Font.Bold
+            font.letterSpacing: 1.2
             Layout.alignment: Qt.AlignVCenter
         }
 
@@ -144,17 +155,18 @@ Rectangle {
         // ── View Toggle ──────────────────────────────────────────────
         Button {
             id: viewToggleBtn
-            text: root.currentView === "photos" ? "👥 Switch to People" : "🖼 Switch to Photos"
+            text: currentView === "photos" ? "👥 Switch to People" : "🖼 Switch to Photos"
             visible: hasScanned
             onClicked: {
-                root.currentView = (root.currentView === "photos") ? "people" : "photos"
+                viewToggled()
             }
             background: Rectangle {
                 color: viewToggleBtn.hovered ? Theme.bgHover : "transparent"
-                radius: Theme.radiusS
-                border.color: Theme.border
+                radius: Theme.radiusL
+                border.color: viewToggleBtn.hovered ? Theme.accentGlow : Theme.border
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
                 text: viewToggleBtn.text
@@ -180,10 +192,11 @@ Rectangle {
             }
             background: Rectangle {
                 color: scanFacesBtn.hovered ? Theme.bgHover : "transparent"
-                radius: Theme.radiusS
-                border.color: Theme.border
+                radius: Theme.radiusL
+                border.color: scanFacesBtn.hovered ? Theme.accentGlow : Theme.border
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
                 text: typeof faceController !== "undefined" && faceController.isScanning 
@@ -211,10 +224,11 @@ Rectangle {
             }
             background: Rectangle {
                 color: changeFolderBtn.hovered ? Theme.bgHover : "transparent"
-                radius: Theme.radiusS
-                border.color: Theme.border
+                radius: Theme.radiusL
+                border.color: changeFolderBtn.hovered ? Theme.accentGlow : Theme.border
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
                 text: changeFolderBtn.text
@@ -244,7 +258,7 @@ Rectangle {
                     if (!rescanButton.enabled) return Theme.accentDisabled
                     return rescanButton.hovered ? Theme.accentHover : Theme.accentSubtle
                 }
-                radius: Theme.radiusS
+                radius: Theme.radiusL
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
@@ -278,10 +292,11 @@ Rectangle {
                     if (!cleanDuplicatesBtn.enabled) return Theme.bgApp
                     return cleanDuplicatesBtn.hovered ? Theme.bgHover : "transparent"
                 }
-                border.color: Theme.border
+                border.color: cleanDuplicatesBtn.hovered ? Theme.accentGlow : Theme.border
                 border.width: 1
-                radius: Theme.radiusS
+                radius: Theme.radiusL
                 Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
             }
             contentItem: Text {
                 text: "🧹 " + cleanDuplicatesBtn.text
@@ -309,14 +324,24 @@ Rectangle {
             background: Rectangle {
                 color: {
                     if (!similarButton.enabled) return Theme.accentDisabled
-                    return similarButton.hovered ? "#00E5FF" : "#00C3FF"
+                    return similarButton.hovered ? Theme.accentHover : Theme.accent
                 }
-                radius: Theme.radiusS
+                radius: Theme.radiusL
+                border.color: similarButton.hovered ? "#FFFFFF" : "transparent"
+                border.width: similarButton.hovered ? 1 : 0
                 Behavior on color { ColorAnimation { duration: 150 } }
+                
+                // Shimmer pulse animation when ready
+                SequentialAnimation on border.color {
+                    loops: Animation.Infinite
+                    running: similarButton.enabled && !similarButton.hovered
+                    ColorAnimation { from: "transparent"; to: Theme.accentGlow; duration: 1500; easing.type: Easing.InOutQuad }
+                    ColorAnimation { from: Theme.accentGlow; to: "transparent"; duration: 1500; easing.type: Easing.InOutQuad }
+                }
             }
             contentItem: Text {
                 text: similarButton.text
-                color: similarButton.enabled ? "#000000" : Theme.textDisabled
+                color: similarButton.enabled ? Theme.textPrimary : Theme.textDisabled
                 font.pixelSize: Theme.fontSmall
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
@@ -357,7 +382,7 @@ Rectangle {
                 onClicked: cleanupController.commitStagedChanges()
                 background: Rectangle {
                     color: commitBtn.hovered ? "#059669" : "#10B981" // Green
-                    radius: Theme.radiusS
+                    radius: Theme.radiusL
                 }
                 contentItem: Text {
                     text: commitBtn.text
@@ -377,9 +402,11 @@ Rectangle {
                 onClicked: cleanupController.clearStagedChanges()
                 background: Rectangle {
                     color: discardBtn.hovered ? Theme.bgHover : "transparent"
-                    border.color: Theme.border
+                    border.color: discardBtn.hovered ? Theme.accentGlow : Theme.border
                     border.width: 1
-                    radius: Theme.radiusS
+                    radius: Theme.radiusL
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
                 }
                 contentItem: Text {
                     text: discardBtn.text

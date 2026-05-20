@@ -290,7 +290,8 @@ class CleanupController(QObject):
             # BUG 3 fix: Re-insert DB records for restored images
             if restored_count > 0 and self._last_batch_metadata and self._image_repository:
                 for meta in self._last_batch_metadata:
-                    self._image_repository.upsert_image({
+                    self._image_repository.insert_image_with_id({
+                        "id": meta["id"],
                         "original_path": meta["original_path"],
                         "file_name": meta["file_name"],
                         "extension": meta["extension"],
@@ -302,6 +303,7 @@ class CleanupController(QObject):
                         "scan_session_id": meta["scan_session_id"],
                         "phash": meta["phash"],
                         "dhash": meta["dhash"],
+                        "hash_computed_at": meta.get("hash_computed_at")
                     })
             
             msg = f"Undid cleanup. Restored {restored_count} image{'s' if restored_count > 1 else ''}."

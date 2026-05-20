@@ -83,10 +83,17 @@ Item {
                     imageId: modelData.id || -1
                     displayRotation: modelData.displayRotation || 0
                     
-                    // Simple preview (optional, if previewModal is available globally)
                     onRequestPreview: {
-                        if (typeof previewModal !== "undefined") {
-                            previewModal.openPreview(modelData.originalPath)
+                        if (typeof globalPreviewModal !== "undefined") {
+                            // Convert the gallery photos array into the format expected by the modal
+                            var list = []
+                            for (var i = 0; i < root.photos.length; i++) {
+                                list.push({
+                                    source: root.photos[i].originalPath,
+                                    fileName: root.photos[i].fileName || ""
+                                })
+                            }
+                            globalPreviewModal.openPreviewList(list, index)
                         }
                     }
                 }

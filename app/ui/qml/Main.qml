@@ -32,8 +32,9 @@ ApplicationWindow {
             imageListModel.clear()
         }
 
-        function onImageReady(originalPath, thumbnailPath, fileName) {
+        function onImageReady(imageId, originalPath, thumbnailPath, fileName) {
             imageListModel.append({
+                "imageId": imageId,
                 "originalPath": originalPath,
                 "thumbnailPath": thumbnailPath,
                 "fileName": fileName
@@ -72,6 +73,15 @@ ApplicationWindow {
         }
     }
 
+    // ── Global Escape → close fullscreen preview ─────────────────────
+    Shortcut {
+        sequence: "Escape"
+        onActivated: {
+            if (globalPreviewModal.visible)
+                globalPreviewModal.closePreview()
+        }
+    }
+
     // ── Layout ───────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
@@ -80,6 +90,10 @@ ApplicationWindow {
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
+            currentView: root.currentView
+            onViewToggled: {
+                root.currentView = (root.currentView === "photos") ? "people" : "photos"
+            }
         }
 
         Rectangle {
@@ -152,5 +166,12 @@ ApplicationWindow {
     // Settings panel overlay — renders on top of everything
     SettingsPanel {
         anchors.fill: parent
+    }
+
+    // ── Global fullscreen preview modal — accessible from all views ──
+    ImagePreviewModal {
+        id: globalPreviewModal
+        anchors.fill: parent
+        z: 9999
     }
 }

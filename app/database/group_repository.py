@@ -60,6 +60,7 @@ class GroupRepository:
                 .all()
             return groups
         finally:
+            session.expunge_all()
             session.close()
 
     def get_group_count(self) -> int:

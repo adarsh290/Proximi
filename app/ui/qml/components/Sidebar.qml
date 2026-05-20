@@ -29,6 +29,15 @@ Rectangle {
             border.color: Theme.border
             border.width: 1
             Layout.preferredHeight: groupInfoColumn.implicitHeight + Theme.spaceM * 2
+            clip: true // to keep accent strip inside corners
+
+            // Accent strip
+            Rectangle {
+                width: 3
+                height: parent.height
+                anchors.left: parent.left
+                color: Theme.accent
+            }
 
             ColumnLayout {
                 id: groupInfoColumn
@@ -38,28 +47,81 @@ Rectangle {
                 anchors.margins: Theme.spaceM
                 spacing: Theme.spaceS
 
-                // Row 1: Group number (large)
-                Text {
-                    text: {
-                        if (typeof similarityController === "undefined") return "—"
-                        return "Group " + (similarityController.currentGroupIndex + 1)
-                    }
-                    color: Theme.textPrimary
-                    font.pixelSize: 24
-                    font.bold: true
+                // Row 1: Group number + Progress Ring
+                RowLayout {
                     Layout.fillWidth: true
-                }
-
-                // "of N" subtitle
-                Text {
-                    text: {
-                        if (typeof similarityController === "undefined") return ""
-                        return "of " + similarityController.groupCount
+                    spacing: Theme.spaceM
+                    
+                    // Circular progress ring
+                    Item {
+                        width: 48
+                        height: 48
+                        
+                        Canvas {
+                            id: progressCanvas
+                            anchors.fill: parent
+                            property real progress: {
+                                if (typeof similarityController === "undefined" || similarityController.groupCount <= 1) return 1.0
+                                return (similarityController.currentGroupIndex + 1) / similarityController.groupCount
+                            }
+                            
+                            onProgressChanged: requestPaint()
+                            
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                
+                                var cx = width / 2
+                                var cy = height / 2
+                                var r = width / 2 - 4
+                                
+                                // Background ring
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, r, 0, 2 * Math.PI)
+                                ctx.lineWidth = 4
+                                ctx.strokeStyle = Theme.border
+                                ctx.stroke()
+                                
+                                // Progress ring
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * progress)
+                                ctx.lineWidth = 4
+                                ctx.strokeStyle = Theme.accent
+                                ctx.lineCap = "round"
+                                ctx.stroke()
+                            }
+                            
+                            Behavior on progress {
+                                NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                            }
+                        }
+                        
+                        Text {
+                            anchors.centerIn: parent
+                            text: typeof similarityController !== "undefined" ? (similarityController.currentGroupIndex + 1) : "1"
+                            color: Theme.textPrimary
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
                     }
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSmall
-                    Layout.fillWidth: true
-                    Layout.topMargin: -Theme.spaceXS
+                    
+                    ColumnLayout {
+                        spacing: 0
+                        Text {
+                            text: "Group"
+                            color: Theme.textPrimary
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+                        Text {
+                            text: {
+                                if (typeof similarityController === "undefined") return ""
+                                return "of " + similarityController.groupCount
+                            }
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontSmall
+                        }
+                    }
                 }
 
                 // Divider
@@ -176,12 +238,13 @@ Rectangle {
             }
 
             background: Rectangle {
-                color: prevBtn.enabled ? (prevBtn.hovered ? Theme.bgHover : Theme.bgPanel) : Theme.bgPanel
-                radius: Theme.radiusS
-                border.color: prevBtn.enabled ? Theme.border : "transparent"
+                color: prevBtn.enabled ? (prevBtn.hovered ? Theme.bgHover : "transparent") : "transparent"
+                radius: Theme.radiusXL
+                border.color: prevBtn.enabled ? (prevBtn.hovered ? Theme.accentGlow : Theme.border) : "transparent"
                 border.width: 1
                 opacity: prevBtn.enabled ? 1.0 : 0.4
                 Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on border.color { ColorAnimation { duration: 120 } }
             }
             contentItem: Text {
                 text: prevBtn.text
@@ -207,9 +270,11 @@ Rectangle {
             }
 
             background: Rectangle {
-                color: nextBtn.enabled ? (nextBtn.hovered ? Theme.accentHover : Theme.accent) : Theme.accentDisabled
-                radius: Theme.radiusS
-                Behavior on color { ColorAnimation { duration: 120 } }
+                radius: Theme.radiusXL
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: nextBtn.enabled ? (nextBtn.hovered ? Theme.accentHover : Theme.accent) : Theme.accentDisabled }
+                    GradientStop { position: 1.0; color: nextBtn.enabled ? (nextBtn.hovered ? Theme.accent : Theme.accentSubtle) : Theme.accentDisabled }
+                }
             }
             contentItem: Text {
                 text: nextBtn.text

@@ -17,6 +17,22 @@ Item {
         }
     }
 
+    // Scale on hover for a lift effect
+    scale: typeof mouseArea !== "undefined" && mouseArea.containsMouse ? 1.02 : 1.0
+    z: typeof mouseArea !== "undefined" && mouseArea.containsMouse ? 10 : 0
+    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+    // Drop shadow simulation
+    Rectangle {
+        anchors.fill: cardBg
+        color: Theme.shadowColor
+        radius: Theme.radiusS
+        opacity: typeof mouseArea !== "undefined" && mouseArea.containsMouse ? 0.8 : 0.2
+        y: typeof mouseArea !== "undefined" && mouseArea.containsMouse ? 4 : 2
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Behavior on y { NumberAnimation { duration: 150 } }
+    }
+
     Connections {
         target: typeof cleanupController !== "undefined" ? cleanupController : null
         function onSelectionStateChanged() {
@@ -152,7 +168,7 @@ Item {
             }
         }
 
-        // Dynamic Border (Keeper / Hover)
+        // Dynamic Border & Keeper Glow
         Rectangle {
             anchors.fill: parent
             radius: Theme.radiusS
@@ -160,7 +176,20 @@ Item {
             border.width: cardRoot.selectionState === "keeper" ? 3 : (mouseArea.containsMouse ? 1 : 0)
             border.color: cardRoot.selectionState === "keeper" ? "#22C55E" : Theme.borderLight
             
+            // Outer glowing ring for keeper
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -3
+                radius: parent.radius + 3
+                color: "transparent"
+                border.width: 3
+                border.color: "#4022C55E"
+                opacity: cardRoot.selectionState === "keeper" ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+            }
+            
             Behavior on border.width { NumberAnimation { duration: 100 } }
+            Behavior on border.color { ColorAnimation { duration: 100 } }
         }
 
         // Top-right icon badge (✓ / ✕)
@@ -173,6 +202,7 @@ Item {
             radius: 12
             color: cardRoot.selectionState === "keeper" ? "#22C55E" : "#EF4444"
             opacity: cardRoot.selectionState !== "unselected" ? 1 : 0
+            scale: cardRoot.selectionState !== "unselected" ? 1.0 : 0.5
             
             Text {
                 anchors.centerIn: parent
@@ -183,6 +213,7 @@ Item {
             }
             
             Behavior on opacity { NumberAnimation { duration: 150 } }
+            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
         }
 
         // Bottom "KEEPER" label — clearly visible pill badge
@@ -196,8 +227,10 @@ Item {
             color: "#22C55E"
             opacity: cardRoot.selectionState === "keeper" ? 1 : 0
             visible: opacity > 0
+            scale: cardRoot.selectionState === "keeper" ? 1.0 : 0.8
 
             Behavior on opacity { NumberAnimation { duration: 150 } }
+            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
             Text {
                 id: keeperLabel
@@ -218,9 +251,8 @@ Item {
             cursorShape: Qt.PointingHandCursor
             
             onClicked: {
-                if (typeof cleanupController !== "undefined") {
-                    cardRoot.forceActiveFocus()
-                }
+                cardRoot.forceActiveFocus()
+                cardRoot.requestPreview()  // Single click → open fullscreen preview
             }
             onDoubleClicked: {
                 if (typeof cleanupController !== "undefined") {

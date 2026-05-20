@@ -16,16 +16,14 @@ Rectangle {
         anchors.rightMargin: Theme.spaceL
         spacing: Theme.spaceM
 
-        // Cleanup actions
-        Button {
-            text: "Keep Selected (K)"
-            onClicked: cleanupController.setKeeper(gridViewFocusId) // Placeholder logic, handled by shortcuts mostly
-            visible: false // For now rely on double-click/keyboard, or just do generic "Keep all" logic.
-        }
 
         Button {
             text: "Reject Others"
-            onClicked: cleanupController.selectAllExceptKeeper()
+            onClicked: {
+                if (typeof cleanupController !== "undefined") {
+                    cleanupController.selectAllExceptKeeper()
+                }
+            }
             
             contentItem: Text {
                 text: parent.text
@@ -57,7 +55,11 @@ Rectangle {
         // Navigation and Execution
         Button {
             text: "Skip"
-            onClicked: similarityController.skipGroup()
+            onClicked: {
+                if (typeof similarityController !== "undefined") {
+                    similarityController.skipGroup()
+                }
+            }
             
             contentItem: Text {
                 text: parent.text

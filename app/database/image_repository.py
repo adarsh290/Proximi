@@ -103,6 +103,24 @@ class ImageRepository:
         finally:
             session.close()
 
+    def insert_image_with_id(self, image_data: dict) -> Optional[Image]:
+        """Insert an image preserving its original ID and hash_computed_at field.
+        Used exclusively for Undo operations to maintain referential integrity.
+        """
+        session: Session = db.SessionLocal()
+        try:
+            image = Image(**image_data)
+            session.add(image)
+            session.commit()
+            session.refresh(image)
+            return image
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to insert image with ID '{image_data.get('id')}': {e}")
+            return None
+        finally:
+            session.close()
+
     def get_image_by_path(self, path: str) -> Optional[Image]:
         """Retrieves a single image record by its original path."""
         session: Session = db.SessionLocal()

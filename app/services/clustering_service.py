@@ -23,6 +23,15 @@ class ClusteringService:
         try:
             from sklearn.cluster import DBSCAN
             self.DBSCAN = DBSCAN
+            
+            # Try to import FAISS for acceleration
+            try:
+                import faiss
+                self.faiss = faiss
+                logger.info("FAISS is available, will use for accelerated clustering.")
+            except ImportError:
+                self.faiss = None
+                
             self._is_initialized = True
             return True
         except ImportError:
@@ -56,7 +65,27 @@ class ClusteringService:
             X = np.array(embeddings)
             
             logger.info(f"Running DBSCAN clustering on {len(X)} faces...")
-            clustering = self.DBSCAN(eps=self.eps, min_samples=self.min_samples, metric='euclidean').fit(X)
+            
+            if hasattr(self, 'faiss') and self.faiss is not None:
+                # Use FAISS range_search to compute the sparse distance matrix
+                # FAISS IndexFlatL2 uses squared Euclidean distance, so radius = eps^2
+                index = self.faiss.IndexFlatL2(X.shape[1])
+                index.add(X)
+                
+                radius = self.eps ** 2
+                lims, D, I = index.range_search(X, radius)
+                
+                # Convert squared distances back to regular Euclidean distance
+                # Ensure no negative distances from float precision errors
+                D_sqrt = np.sqrt(np.maximum(D, 0.0))
+                
+                from scipy.sparse import csr_matrix
+                distance_matrix = csr_matrix((D_sqrt, I, lims), shape=(len(X), len(X)))
+                
+                clustering = self.DBSCAN(eps=self.eps, min_samples=self.min_samples, metric='precomputed').fit(distance_matrix)
+            else:
+                clustering = self.DBSCAN(eps=self.eps, min_samples=self.min_samples, metric='euclidean').fit(X)
+                
             labels = clustering.labels_
             
             unique_labels = set(labels)

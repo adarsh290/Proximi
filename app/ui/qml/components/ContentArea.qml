@@ -63,7 +63,14 @@ Item {
             height: imageGrid.cellHeight - Theme.gridSpacing
             thumbnailSource: model.thumbnailPath || ""
             fileName: model.fileName || ""
+            imageId: model.imageId || -1
             isFlicking: imageGrid.flicking  // Disable smooth filter during fast scroll
+
+            onRequestPreview: {
+                if (typeof globalPreviewModal !== "undefined") {
+                    globalPreviewModal.openPreview(model.originalPath)
+                }
+            }
         }
 
         // Smooth scrolling tuning

@@ -16,7 +16,7 @@ class TrashRecord(Base):
     # Relationships to existing entities
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
     scan_session_id = Column(Integer, ForeignKey("scan_sessions.id", ondelete="CASCADE"), nullable=False)
-    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     
     # Used for batch undo operations (e.g. undoing a "clean group" action that moved 3 files)
     batch_id = Column(String, nullable=False, index=True)

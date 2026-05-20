@@ -37,8 +37,8 @@ def main():
     
     # 2. Initialize Database
     from app.database.migration import run_migrations
-    run_migrations()
     db.initialize_database()
+    run_migrations()
     
     # 3. Setup Application
     # Using QApplication (not QGuiApplication) to support QFileDialog

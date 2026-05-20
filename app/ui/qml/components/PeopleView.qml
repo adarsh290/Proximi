@@ -53,17 +53,17 @@ Item {
                 Button {
                     text: "Refresh"
                     onClicked: refreshData()
-                    visible: !faceController.isScanning
+                    visible: typeof faceController !== "undefined" && !faceController.isScanning
                 }
             }
             
             // Global Status text (for errors or success)
             Text {
-                text: faceController.statusText
-                color: faceController.statusText.startsWith("Error") ? Theme.error : Theme.textMuted
+                text: typeof faceController !== "undefined" ? faceController.statusText : ""
+                color: (typeof faceController !== "undefined" && faceController.statusText.startsWith("Error")) ? Theme.error : Theme.textMuted
                 font.pixelSize: Theme.fontSmall
                 Layout.alignment: Qt.AlignHCenter
-                visible: faceController.statusText !== ""
+                visible: typeof faceController !== "undefined" && faceController.statusText !== ""
             }
 
             // ── Scanning State Overlay ───────────────────────────────────
@@ -83,8 +83,8 @@ Item {
                     Layout.preferredWidth: 300
                     Layout.alignment: Qt.AlignHCenter
                     from: 0
-                    to: faceController.progressTotal
-                    value: faceController.progressCurrent
+                    to: typeof faceController !== "undefined" ? faceController.progressTotal : 100
+                    value: typeof faceController !== "undefined" ? faceController.progressCurrent : 0
                 }
             }
 
@@ -93,7 +93,7 @@ Item {
                 id: peopleGrid
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: !faceController.isScanning && peopleData.length > 0
+                visible: (typeof faceController === "undefined" || !faceController.isScanning) && peopleData.length > 0
                 
                 cellWidth: 160
                 cellHeight: 200
@@ -132,6 +132,8 @@ Item {
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     smooth: true
+                                    sourceSize.width: 100
+                                    sourceSize.height: 100
                                 }
                             }
                             
@@ -178,7 +180,7 @@ Item {
                 Layout.alignment: Qt.AlignCenter
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: !faceController.isScanning && peopleData.length === 0
+                visible: (typeof faceController === "undefined" || !faceController.isScanning) && peopleData.length === 0
             }
         }
         

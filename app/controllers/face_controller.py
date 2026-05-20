@@ -80,6 +80,10 @@ class FaceScanWorker(QRunnable):
                 with ThreadPoolExecutor(max_workers=1, thread_name_prefix="img_preload") as preloader:
                     preload_future = None
                     preload_img_id = None
+                    
+                    batch_items = []
+                    batch_img_ids = []
+                    batch_size = FaceService.BATCH_SIZE
 
                     for i, (img_id, img_path) in enumerate(work_list):
                         self.signals.progress.emit(i, total)
@@ -99,29 +103,37 @@ class FaceScanWorker(QRunnable):
                         else:
                             preload_future = None
 
-                        if cv_img is None:
-                            continue
+                        if cv_img is not None:
+                            batch_items.append((cv_img, img_path))
+                            batch_img_ids.append(img_id)
 
-                        # GPU inference
-                        results = self.face_service.detect_faces_from_array(cv_img, img_path)
+                        # Process batch when full or on the last iteration
+                        if len(batch_items) >= batch_size or (i == len(work_list) - 1 and batch_items):
+                            # GPU inference on the batch
+                            batch_results = self.face_service.detect_faces_batch(batch_items)
 
-                        for res in results:
-                            l, t, r, b = res['bbox']
-                            face = Face(
-                                image_id=img_id,
-                                bbox_left=l,
-                                bbox_top=t,
-                                bbox_right=r,
-                                bbox_bottom=b,
-                                embedding=res['embedding'],
-                                face_crop_path=res['crop_path']
-                            )
-                            session.add(face)
+                            for b_idx, results in enumerate(batch_results):
+                                current_img_id = batch_img_ids[b_idx]
+                                for res in results:
+                                    l, t, r, b = res['bbox']
+                                    face = Face(
+                                        image_id=current_img_id,
+                                        bbox_left=l,
+                                        bbox_top=t,
+                                        bbox_right=r,
+                                        bbox_bottom=b,
+                                        embedding=res['embedding'],
+                                        face_crop_path=res['crop_path']
+                                    )
+                                    session.add(face)
 
-                        pending_since_commit += 1
-                        if pending_since_commit >= _FACE_DB_BATCH_SIZE:
-                            session.commit()
-                            pending_since_commit = 0
+                            pending_since_commit += len(batch_items)
+                            if pending_since_commit >= _FACE_DB_BATCH_SIZE:
+                                session.commit()
+                                pending_since_commit = 0
+                                
+                            batch_items.clear()
+                            batch_img_ids.clear()
 
                 if pending_since_commit > 0:
                     session.commit()

@@ -103,6 +103,17 @@ class SimilarityService:
 
             # Boolean mask for matches within threshold
             match_mask = distances <= candidate_threshold
+            
+            # Dual-hash vectorized pre-filter
+            if dhash_valid[i]:
+                dh_xor = dhash_arr[i] ^ dhash_arr[i + 1:]
+                dh_dist = self._popcount_uint64(dh_xor)
+                
+                # Reject if BOTH have valid dHash AND distance > threshold
+                valid_both = dhash_valid[i + 1:]
+                reject_mask = valid_both & (dh_dist > dhash_threshold)
+                match_mask = match_mask & (~reject_mask)
+
             match_indices = np.where(match_mask)[0] + (i + 1)
             match_distances = distances[match_mask]
 
@@ -145,7 +156,7 @@ class SimilarityService:
                 # 2. dHash check (inline popcount for single value)
                 dh_distance = None
                 if dhash_valid[i] and dhash_valid[j]:
-                    dh_distance = bin(int(dhash_arr[i] ^ dhash_arr[j])).count('1')
+                    dh_distance = int(self._popcount_uint64(np.array([dhash_arr[i] ^ dhash_arr[j]], dtype=np.uint64))[0])
                     if dh_distance > dhash_threshold:
                         return None
 
