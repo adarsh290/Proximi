@@ -53,8 +53,9 @@ Item {
 
         Behavior on opacity { NumberAnimation { duration: Theme.animPage; easing.type: Easing.OutCubic } }
 
-        cellWidth: Theme.thumbnailSize + Theme.gridSpacing
-        cellHeight: Theme.thumbnailSize + Theme.gridSpacing
+        // Increased spacing for a less cramped look
+        cellWidth: Theme.thumbnailSize + 12
+        cellHeight: Theme.thumbnailSize + 12
         model: contentRoot.imageModel
         cacheBuffer: 4000  // Pre-render ~20 rows outside viewport for smooth 10k+ image scrolling
 

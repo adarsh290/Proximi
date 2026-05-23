@@ -50,7 +50,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "#000000"
-        opacity: 0.75
+        opacity: 1.0
     }
 
     // Blur-like layered gradient

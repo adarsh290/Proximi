@@ -190,28 +190,45 @@ Item {
             Behavior on border.color { ColorAnimation { duration: 100 } }
         }
 
-        // Top-right icon badge (✓ / ✕)
+        // Top-right icon badge (Interactive Keeper Toggle)
         Rectangle {
+            id: keeperBadge
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.margins: 4
-            width: 24
-            height: 24
-            radius: 12
-            color: cardRoot.selectionState === "keeper" ? "#22C55E" : "#EF4444"
-            opacity: cardRoot.selectionState !== "unselected" ? 1 : 0
-            scale: cardRoot.selectionState !== "unselected" ? 1.0 : 0.5
+            width: 28
+            height: 28
+            radius: 14
+            color: cardRoot.selectionState === "keeper" ? "#22C55E" : (cardRoot.selectionState === "rejected" ? "#EF4444" : "#88000000")
+            opacity: (cardRoot.selectionState !== "unselected" || mouseArea.containsMouse) ? 1 : 0
+            scale: (cardRoot.selectionState !== "unselected" || mouseArea.containsMouse) ? 1.0 : 0.5
+            z: 10
             
             Text {
                 anchors.centerIn: parent
-                text: cardRoot.selectionState === "keeper" ? "✓" : "✕"
+                text: cardRoot.selectionState === "keeper" ? "✓" : (cardRoot.selectionState === "rejected" ? "✕" : "✓")
                 color: "white"
                 font.bold: true
                 font.pixelSize: 14
+                opacity: (cardRoot.selectionState !== "unselected" || keeperMouse.containsMouse) ? 1.0 : 0.5
             }
             
             Behavior on opacity { NumberAnimation { duration: 150 } }
             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+            Behavior on color { ColorAnimation { duration: 150 } }
+
+            MouseArea {
+                id: keeperMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                // Explicitly intercept click so it doesn't trigger the image preview
+                onClicked: {
+                    if (typeof cleanupController !== "undefined") {
+                        cleanupController.setKeeper(cardRoot.imageId)
+                    }
+                }
+            }
         }
 
         // Bottom "KEEPER" label — clearly visible pill badge

@@ -157,42 +157,49 @@ Item {
     // Keyboard Shortcuts at the view level (robust against focus stealing)
     Shortcut {
         sequence: "Right"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof similarityController !== "undefined") similarityController.nextGroup()
         }
     }
     Shortcut {
         sequence: "D"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof similarityController !== "undefined") similarityController.nextGroup()
         }
     }
     Shortcut {
         sequence: "Left"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof similarityController !== "undefined") similarityController.previousGroup()
         }
     }
     Shortcut {
         sequence: "A"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof similarityController !== "undefined") similarityController.previousGroup()
         }
     }
     Shortcut {
         sequence: "Ctrl+Z"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof cleanupController !== "undefined") cleanupController.undoLastCleanup()
         }
     }
     Shortcut {
         sequence: "Ctrl+Enter"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof cleanupController !== "undefined") cleanupController.executeCleanup()
         }
     }
     Shortcut {
         sequence: "Ctrl+Return"
+        enabled: typeof globalPreviewModal !== "undefined" ? !globalPreviewModal.visible : true
         onActivated: {
             if (typeof cleanupController !== "undefined") cleanupController.executeCleanup()
         }

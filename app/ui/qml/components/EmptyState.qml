@@ -96,42 +96,45 @@ Item {
         }
 
         // ── Primary Action Button ─────────────────────────────────
-        Button {
+        Rectangle {
             id: primaryBtn
-            text: folderSelected ? "Start Scan" : "Browse Folder"
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: 220
             Layout.preferredHeight: 52
+            radius: 26
             
-            scale: primaryBtn.hovered ? 1.05 : 1.0
+            property bool hovered: primaryBtnMouseArea.containsMouse
+            scale: hovered ? 1.05 : 1.0
             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
-            background: Rectangle {
-                radius: Theme.radiusXL
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: folderSelected ? (primaryBtn.hovered ? "#4ADE80" : "#22C55E") : (primaryBtn.hovered ? Theme.accentHover : Theme.accent) }
-                    GradientStop { position: 1.0; color: folderSelected ? (primaryBtn.hovered ? "#22C55E" : "#16A34A") : (primaryBtn.hovered ? Theme.accent : Theme.accentSubtle) }
-                }
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: folderSelected ? (hovered ? "#4ADE80" : "#22C55E") : (hovered ? Theme.accentHover : Theme.accent) }
+                GradientStop { position: 1.0; color: folderSelected ? (hovered ? "#22C55E" : "#16A34A") : (hovered ? Theme.accent : Theme.accentSubtle) }
             }
 
-            contentItem: Text {
-                text: primaryBtn.text
+            Text {
+                anchors.centerIn: parent
+                text: folderSelected ? "Start Scan" : "Browse Folder"
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontBody
                 font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
             }
 
-            onClicked: {
-                if (typeof scanController !== "undefined") {
-                    if (folderSelected) {
-                        if (typeof similarityController !== "undefined") {
-                            similarityController.resetState()
+            MouseArea {
+                id: primaryBtnMouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (typeof scanController !== "undefined") {
+                        if (folderSelected) {
+                            if (typeof similarityController !== "undefined") {
+                                similarityController.resetState()
+                            }
+                            scanController.startScan()
+                        } else {
+                            scanController.selectFolder()
                         }
-                        scanController.startScan()
-                    } else {
-                        scanController.selectFolder()
                     }
                 }
             }

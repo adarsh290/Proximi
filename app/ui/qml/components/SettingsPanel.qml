@@ -78,9 +78,16 @@ Item {
             MouseArea {
                 anchors.fill: parent; acceptedButtons: Qt.NoButton
                 onWheel: (wheel) => {
-                    if (wheel.angleDelta.y > 0) ssrSlider.increase()
-                    else ssrSlider.decrease()
-                    ssrRoot.valueCommitted(ssrRoot.isInt ? Math.round(ssrSlider.value) : ssrSlider.value)
+                    // Prevent Slider from eating the wheel event
+                    wheel.accepted = true
+                    
+                    // Manually pass the scroll intent to the parent Flickable
+                    var newY = flickable.contentY - wheel.angleDelta.y
+                    if (newY < 0) newY = 0
+                    if (newY > flickable.contentHeight - flickable.height) {
+                        newY = flickable.contentHeight - flickable.height
+                    }
+                    flickable.contentY = newY
                 }
             }
 
@@ -239,18 +246,27 @@ Item {
                 property bool anySliderActive: false  // Individual sliders handle their own scroll events
 
                 ScrollBar.vertical: ScrollBar {
+                    id: vbarSettings
                     policy: ScrollBar.AsNeeded
+                    hoverEnabled: true
+
+                    background: Item {}
+
                     contentItem: Rectangle {
-                        implicitWidth: 4
-                        radius: 2
+                        implicitWidth: vbarSettings.pressed || vbarSettings.hovered ? 8 : 2
+                        radius: width / 2
                         color: Theme.textDisabled
-                        opacity: 0.6
+                        opacity: vbarSettings.pressed || vbarSettings.hovered ? 0.8 : 0.4
+
+                        Behavior on implicitWidth { NumberAnimation { duration: 150 } }
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
                     }
                 }
 
                 ColumnLayout {
                     id: bodyCol
-                    width: flickable.width - Theme.spaceM
+                    // Account for left margin + right margin to prevent clipping
+                    width: flickable.width - Theme.spaceL - Theme.spaceM
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.spaceL
                     spacing: 0
